@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 
 type UploadTrackFormProps = {
   projectId: string;
+  canUpload: boolean;
 };
 
 type UploadState = 'queued' | 'uploading' | 'processing' | 'done' | 'error';
@@ -81,7 +82,7 @@ function uploadFileWithProgress(signedUrl: string, file: File, onProgress: (prog
   });
 }
 
-export function UploadTrackForm({ projectId }: UploadTrackFormProps) {
+export function UploadTrackForm({ projectId, canUpload }: UploadTrackFormProps) {
   const router = useRouter();
   const [uploads, setUploads] = useState<UploadItem[]>([]);
 
@@ -94,6 +95,8 @@ export function UploadTrackForm({ projectId }: UploadTrackFormProps) {
   const handleFilesSelected = async (event: ChangeEvent<HTMLInputElement>) => {
     const selectedFiles = Array.from(event.target.files ?? []);
     event.target.value = '';
+
+    if (!canUpload) return;
 
     if (selectedFiles.length === 0) return;
 
@@ -191,10 +194,11 @@ export function UploadTrackForm({ projectId }: UploadTrackFormProps) {
 
   return (
     <div className="space-y-3">
-      <label className="inline-flex cursor-pointer items-center rounded-lg bg-brand px-4 py-2 text-sm font-medium">
+      <label className={`inline-flex items-center rounded-lg px-4 py-2 text-sm font-medium ${canUpload ? 'cursor-pointer bg-brand' : 'cursor-not-allowed bg-brand/60 text-white/80'}`}>
         Upload stems
         <input
           className="hidden"
+          disabled={!canUpload}
           type="file"
           accept=".wav,.mp3,.aif,.aiff,.m4a,audio/wav,audio/mpeg,audio/x-aiff,audio/aiff,audio/mp4"
           multiple
@@ -202,6 +206,7 @@ export function UploadTrackForm({ projectId }: UploadTrackFormProps) {
         />
       </label>
       <p className="text-xs text-muted">Supported: WAV, MP3, AIFF/AIF, M4A (if browser decoding is available). Max 250MB per file.</p>
+      {!canUpload ? <p className="text-xs text-muted">You have viewer access, so uploads are disabled.</p> : null}
       {uploads.length > 0 ? (
         <ul className="space-y-2 text-xs">
           {uploads.map((upload) => (

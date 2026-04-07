@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
+import { canEditProject, getProjectMembership } from '@/lib/project-members';
 import { createClient } from '@/lib/supabase/server';
 
 const syncTracksSchema = z.object({
@@ -28,6 +29,11 @@ export async function POST(request: Request, { params }: { params: { projectId: 
 
   if (!user) {
     return NextResponse.json({ error: 'Unauthorized.' }, { status: 401 });
+  }
+
+  const membership = await getProjectMembership(supabase, params.projectId, user.id);
+  if (!membership || !canEditProject(membership.role)) {
+    return NextResponse.json({ error: 'Only owners and editors can modify offsets.' }, { status: 403 });
   }
 
   for (const entry of parsed.data.offsets) {

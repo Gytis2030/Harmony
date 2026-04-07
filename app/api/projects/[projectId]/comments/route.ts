@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
+import { getProjectMembership } from '@/lib/project-members';
 import { createClient } from '@/lib/supabase/server';
 
 const createCommentSchema = z.object({
@@ -28,6 +29,11 @@ export async function POST(request: Request, { params }: { params: { projectId: 
 
   if (!user) {
     return NextResponse.json({ error: 'Unauthorized.' }, { status: 401 });
+  }
+
+  const membership = await getProjectMembership(supabase, params.projectId, user.id);
+  if (!membership) {
+    return NextResponse.json({ error: 'Access denied.' }, { status: 403 });
   }
 
   const commentInsert = {
@@ -66,6 +72,11 @@ export async function PATCH(request: Request, { params }: { params: { projectId:
 
   if (!user) {
     return NextResponse.json({ error: 'Unauthorized.' }, { status: 401 });
+  }
+
+  const membership = await getProjectMembership(supabase, params.projectId, user.id);
+  if (!membership) {
+    return NextResponse.json({ error: 'Access denied.' }, { status: 403 });
   }
 
   const { data: comment, error } = await supabase

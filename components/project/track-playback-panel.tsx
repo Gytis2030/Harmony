@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import { WaveformPlayer } from '@/components/project/waveform-player';
 import { autoSyncStemOffsets, type StemSyncResult } from '@/lib/audio/stem-auto-sync';
+import type { ProjectRole } from '@/lib/project-members';
 import { useTimelineStore } from '@/store/timeline-store';
 import type { Json } from '@/types/database';
 
@@ -32,6 +33,11 @@ type ReviewComment = {
 
 type TrackPlaybackPanelProps = {
   projectId: string;
+  permissions: {
+    role: ProjectRole;
+    canEdit: boolean;
+    canComment: boolean;
+  };
   tracks: PlaybackTrack[];
   initialComments: ReviewComment[];
   initialVersions: ProjectVersionItem[];
@@ -65,7 +71,7 @@ function formatDate(value: string) {
   return new Date(value).toLocaleString();
 }
 
-export function TrackPlaybackPanel({ projectId, tracks, initialComments, initialVersions }: TrackPlaybackPanelProps) {
+export function TrackPlaybackPanel({ projectId, permissions, tracks, initialComments, initialVersions }: TrackPlaybackPanelProps) {
   const OFFSET_NUDGE_FINE = 0.01;
   const OFFSET_NUDGE_COARSE = 0.1;
   const cursorMs = useTimelineStore((state) => state.cursorMs);
@@ -104,6 +110,8 @@ export function TrackPlaybackPanel({ projectId, tracks, initialComments, initial
   const [commentTimestampSec, setCommentTimestampSec] = useState(0);
   const [isSavingComment, setIsSavingComment] = useState(false);
   const [commentError, setCommentError] = useState<string | null>(null);
+
+  const isEditDisabled = !permissions.canEdit;
 
   useEffect(() => {
     setTrackList(tracks);
@@ -253,6 +261,11 @@ export function TrackPlaybackPanel({ projectId, tracks, initialComments, initial
   );
 
   const handleCreateComment = useCallback(async () => {
+    if (!permissions.canComment) {
+      setCommentError('Commenting is disabled for your role.');
+      return;
+    }
+
     if (!commentText.trim()) {
       setCommentError('Comment text is required.');
       return;
@@ -307,7 +320,7 @@ export function TrackPlaybackPanel({ projectId, tracks, initialComments, initial
     ]);
     setCommentText('');
     setIsSavingComment(false);
-  }, [commentText, commentTimestampSec, projectId, selectedTrackId]);
+  }, [commentText, commentTimestampSec, permissions.canComment, projectId, selectedTrackId]);
 
   const toggleResolved = useCallback(
     async (commentId: string, nextResolved: boolean) => {
@@ -321,10 +334,15 @@ export function TrackPlaybackPanel({ projectId, tracks, initialComments, initial
 
       setComments((prev) => prev.map((comment) => (comment.id === commentId ? { ...comment, resolved: nextResolved } : comment)));
     },
-    [projectId]
+    [isEditDisabled, projectId]
   );
 
   const handleAutoSync = useCallback(async () => {
+    if (isEditDisabled) {
+      setSyncMessage('Your role is viewer. Editing actions are disabled.');
+      return;
+    }
+
     if (trackList.length === 0) {
       setSyncMessage('No tracks available to sync.');
       return;
@@ -379,10 +397,11 @@ export function TrackPlaybackPanel({ projectId, tracks, initialComments, initial
     } finally {
       setIsSyncingStems(false);
     }
-  }, [projectId, referenceTrackId, seekTimeline, timelineSec, trackList]);
+  }, [isEditDisabled, projectId, referenceTrackId, seekTimeline, timelineSec, trackList]);
 
   const persistTrackOffset = useCallback(
     async (trackId: string, nextOffsetSec: number) => {
+      if (isEditDisabled) return;
       setOffsetSaving((prev) => ({ ...prev, [trackId]: true }));
       setOffsetErrorByTrack((prev) => ({ ...prev, [trackId]: null }));
 
@@ -423,6 +442,11 @@ export function TrackPlaybackPanel({ projectId, tracks, initialComments, initial
   );
 
   const createVersion = useCallback(async () => {
+    if (isEditDisabled) {
+      setVersionActionMessage('Your role is viewer. Saving versions is disabled.');
+      return;
+    }
+
     if (!versionLabelInput.trim()) {
       setVersionActionMessage('Version label is required.');
       return;
@@ -473,9 +497,14 @@ export function TrackPlaybackPanel({ projectId, tracks, initialComments, initial
     } finally {
       setIsSavingVersion(false);
     }
-  }, [projectId, versionLabelInput, versionNotesInput]);
+  }, [isEditDisabled, projectId, versionLabelInput, versionNotesInput]);
 
   const restoreOffsetsFromVersion = useCallback(async () => {
+    if (isEditDisabled) {
+      setVersionActionMessage('Your role is viewer. Restoring offsets is disabled.');
+      return;
+    }
+
     if (!selectedVersion) {
       setVersionActionMessage('Select a version first.');
       return;
@@ -510,13 +539,14 @@ export function TrackPlaybackPanel({ projectId, tracks, initialComments, initial
     } finally {
       setIsRestoringOffsets(false);
     }
-  }, [projectId, seekTimeline, selectedVersion, timelineSec]);
+  }, [isEditDisabled, projectId, seekTimeline, selectedVersion, timelineSec]);
 
   return (
     <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">
       <div className="card p-4">
         <h2 className="text-lg font-medium">Project timeline</h2>
         <p className="mt-1 text-xs text-muted">Unified waveform playback with offset-aware stem alignment and review notes.</p>
+        <p className="mt-1 text-xs text-muted">Your role: <span className="font-medium capitalize">{permissions.role}</span>{isEditDisabled ? ' (editing disabled)' : ''}</p>
 
         <div className="mt-4 rounded-lg border border-border bg-background p-3">
           <div className="flex flex-wrap items-center gap-2">
@@ -544,7 +574,7 @@ export function TrackPlaybackPanel({ projectId, tracks, initialComments, initial
             <select
               className="rounded border border-border bg-background px-2 py-1 text-sm"
               value={referenceTrackId}
-              onChange={(event) => setReferenceTrackId(event.target.value)}
+              onChange={(event) => setReferenceTrackId(event.target.value)} disabled={isEditDisabled}
             >
               {trackList.map((track) => (
                 <option key={`reference-${track.id}`} value={track.id}>
@@ -552,7 +582,7 @@ export function TrackPlaybackPanel({ projectId, tracks, initialComments, initial
                 </option>
               ))}
             </select>
-            <button className="rounded border border-border px-3 py-1 text-sm" onClick={handleAutoSync} disabled={isSyncingStems}>
+            <button className="rounded border border-border px-3 py-1 text-sm disabled:opacity-60" onClick={handleAutoSync} disabled={isSyncingStems || isEditDisabled}>
               {isSyncingStems ? 'Syncing…' : 'Auto Sync Stems'}
             </button>
           </div>
@@ -629,14 +659,14 @@ export function TrackPlaybackPanel({ projectId, tracks, initialComments, initial
                       <div className="flex items-center gap-1 rounded border border-border px-1 py-1">
                         <button
                           className="rounded border border-border px-2 py-0.5"
-                          onClick={() => updateTrackOffset(track.id, track.offsetSec - OFFSET_NUDGE_COARSE)}
+                          onClick={() => updateTrackOffset(track.id, track.offsetSec - OFFSET_NUDGE_COARSE)} disabled={isEditDisabled}
                           title={`Nudge left by ${OFFSET_NUDGE_COARSE}s`}
                         >
                           -0.1
                         </button>
                         <button
                           className="rounded border border-border px-2 py-0.5"
-                          onClick={() => updateTrackOffset(track.id, track.offsetSec - OFFSET_NUDGE_FINE)}
+                          onClick={() => updateTrackOffset(track.id, track.offsetSec - OFFSET_NUDGE_FINE)} disabled={isEditDisabled}
                           title={`Nudge left by ${OFFSET_NUDGE_FINE}s`}
                         >
                           -0.01
@@ -648,6 +678,7 @@ export function TrackPlaybackPanel({ projectId, tracks, initialComments, initial
                           step={0.01}
                           value={offsetInputs[track.id] ?? track.offsetSec.toFixed(2)}
                           onChange={(event) => {
+                            if (isEditDisabled) return;
                             const value = event.target.value;
                             setOffsetInputs((prev) => ({ ...prev, [track.id]: value }));
                             const parsed = Number(value);
@@ -659,34 +690,36 @@ export function TrackPlaybackPanel({ projectId, tracks, initialComments, initial
                             }
                           }}
                           onBlur={() => {
+                            if (isEditDisabled) return;
                             const parsed = Number(offsetInputs[track.id]);
                             updateTrackOffset(track.id, Number.isNaN(parsed) ? track.offsetSec : parsed);
                           }}
                           onKeyDown={(event) => {
-                            if (event.key === 'Enter') {
+                            if (event.key === 'Enter' && !isEditDisabled) {
                               const parsed = Number(offsetInputs[track.id]);
                               updateTrackOffset(track.id, Number.isNaN(parsed) ? track.offsetSec : parsed);
                               (event.target as HTMLInputElement).blur();
                             }
                           }}
                           aria-label={`Offset for ${track.name} in seconds`}
+                          disabled={isEditDisabled}
                         />
                         <span className="text-muted">s</span>
                         <button
                           className="rounded border border-border px-2 py-0.5"
-                          onClick={() => updateTrackOffset(track.id, track.offsetSec + OFFSET_NUDGE_FINE)}
+                          onClick={() => updateTrackOffset(track.id, track.offsetSec + OFFSET_NUDGE_FINE)} disabled={isEditDisabled}
                           title={`Nudge right by ${OFFSET_NUDGE_FINE}s`}
                         >
                           +0.01
                         </button>
                         <button
                           className="rounded border border-border px-2 py-0.5"
-                          onClick={() => updateTrackOffset(track.id, track.offsetSec + OFFSET_NUDGE_COARSE)}
+                          onClick={() => updateTrackOffset(track.id, track.offsetSec + OFFSET_NUDGE_COARSE)} disabled={isEditDisabled}
                           title={`Nudge right by ${OFFSET_NUDGE_COARSE}s`}
                         >
                           +0.1
                         </button>
-                        <button className="rounded border border-border px-2 py-0.5" onClick={() => updateTrackOffset(track.id, 0)}>
+                        <button className="rounded border border-border px-2 py-0.5" onClick={() => updateTrackOffset(track.id, 0)} disabled={isEditDisabled}>
                           Reset Offset
                         </button>
                       </div>
@@ -735,6 +768,7 @@ export function TrackPlaybackPanel({ projectId, tracks, initialComments, initial
               value={versionLabelInput}
               onChange={(event) => setVersionLabelInput(event.target.value)}
               placeholder="Mix pass A"
+              disabled={isEditDisabled}
             />
             <label className="block text-xs font-medium">Notes (optional)</label>
             <textarea
@@ -742,8 +776,9 @@ export function TrackPlaybackPanel({ projectId, tracks, initialComments, initial
               value={versionNotesInput}
               onChange={(event) => setVersionNotesInput(event.target.value)}
               placeholder="What changed in this snapshot?"
+              disabled={isEditDisabled}
             />
-            <button className="rounded bg-brand px-3 py-1 text-sm font-medium text-white" onClick={createVersion} disabled={isSavingVersion}>
+            <button className="rounded bg-brand px-3 py-1 text-sm font-medium text-white disabled:opacity-60" onClick={createVersion} disabled={isSavingVersion || isEditDisabled}>
               {isSavingVersion ? 'Saving…' : 'Save Version'}
             </button>
           </div>
@@ -777,7 +812,7 @@ export function TrackPlaybackPanel({ projectId, tracks, initialComments, initial
               <button
                 className="rounded border border-border px-3 py-1 text-xs"
                 onClick={restoreOffsetsFromVersion}
-                disabled={isRestoringOffsets}
+                disabled={isRestoringOffsets || isEditDisabled}
               >
                 {isRestoringOffsets ? 'Restoring…' : 'Restore Offsets From Version'}
               </button>
@@ -802,12 +837,14 @@ export function TrackPlaybackPanel({ projectId, tracks, initialComments, initial
             step={0.01}
             value={commentTimestampSec}
             onChange={(event) => setCommentTimestampSec(Number(event.target.value))}
+            disabled={!permissions.canComment}
           />
           <p className="text-xs text-muted">Click the timeline/waveform to prefill this timestamp.</p>
           <label className="block text-xs font-medium">Track (optional)</label>
           <select
             value={selectedTrackId ?? ''}
             onChange={(event) => setSelectedTrackId(event.target.value || null)}
+            disabled={!permissions.canComment}
             className="w-full rounded border border-border bg-background px-2 py-1 text-sm"
           >
             <option value="">General project comment</option>
@@ -823,9 +860,10 @@ export function TrackPlaybackPanel({ projectId, tracks, initialComments, initial
             value={commentText}
             onChange={(event) => setCommentText(event.target.value)}
             placeholder="What should be changed at this point in the timeline?"
+            disabled={!permissions.canComment}
           />
           {commentError ? <p className="text-xs text-red-500">{commentError}</p> : null}
-          <button className="rounded bg-brand px-3 py-1 text-sm font-medium text-white" onClick={handleCreateComment} disabled={isSavingComment}>
+          <button className="rounded bg-brand px-3 py-1 text-sm font-medium text-white" onClick={handleCreateComment} disabled={isSavingComment || !permissions.canComment}>
             {isSavingComment ? 'Saving…' : 'Add comment'}
           </button>
         </div>
