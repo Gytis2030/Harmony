@@ -1,7 +1,7 @@
 import { TrackPlaybackPanel } from '@/components/project/track-playback-panel';
 import { UploadTrackForm } from '@/components/project/upload-track-form';
 import { createClient } from '@/lib/supabase/server';
-import type { Track } from '@/types/database';
+import type { Json, Track } from '@/types/database';
 
 type ProjectTrack = Track & {
   signedUrl?: string;
@@ -24,20 +24,37 @@ type CommentRecord = {
 
 async function getProjectData(projectId: string) {
   const supabase = createClient();
-  const { data: tracks } = await supabase
-    .from('tracks')
-    .select('*')
-    .eq('project_id', projectId)
-    .order('created_at', { ascending: true });
-  const { data: comments } = await supabase
-    .from('comments')
-    .select('id, project_id, track_id, author_id, timestamp_sec, body, resolved, created_at, profiles:author_id(full_name, email)')
-    .eq('project_id', projectId)
-    .order('timestamp_sec', { ascending: true })
-    .limit(200);
+  const [{ data: tracks }, { data: comments }, { data: versions }] = await Promise.all([
+    supabase.from('tracks').select('*').eq('project_id', projectId).order('created_at', { ascending: true }),
+    supabase
+      .from('comments')
+      .select('id, project_id, track_id, author_id, timestamp_sec, body, resolved, created_at, profiles:author_id(full_name, email)')
+      .eq('project_id', projectId)
+      .order('timestamp_sec', { ascending: true })
+      .limit(200),
+    supabase
+      .from('project_versions')
+      .select('id, label, notes, created_at, created_by, snapshot_json, profiles:created_by(full_name, email)')
+      .eq('project_id', projectId)
+      .order('created_at', { ascending: false })
+      .limit(100)
+  ]);
 
-  return { tracks: (tracks ?? []) as Track[], comments: (comments ?? []) as CommentRecord[] };
+  return { tracks: (tracks ?? []) as Track[], comments: (comments ?? []) as CommentRecord[], versions: (versions ?? []) as ProjectVersionRecord[] };
 }
+
+type ProjectVersionRecord = {
+  id: string;
+  label: string;
+  notes: string | null;
+  created_at: string;
+  created_by: string;
+  snapshot_json: Json;
+  profiles: {
+    full_name: string | null;
+    email: string | null;
+  } | null;
+};
 
 async function getSignedTrackUrl(path: string | undefined) {
   if (!path) return undefined;
@@ -48,7 +65,7 @@ async function getSignedTrackUrl(path: string | undefined) {
 }
 
 export default async function ProjectPage({ params }: { params: { projectId: string } }) {
-  const { tracks, comments } = await getProjectData(params.projectId);
+  const { tracks, comments, versions } = await getProjectData(params.projectId);
 
   const tracksWithUrls: ProjectTrack[] = await Promise.all(
     tracks.map(async (track) => ({
@@ -90,6 +107,15 @@ export default async function ProjectPage({ params }: { params: { projectId: str
           body: comment.body,
           resolved: comment.resolved,
           createdAt: comment.created_at
+        }))}
+        initialVersions={versions.map((version) => ({
+          id: version.id,
+          label: version.label,
+          notes: version.notes,
+          createdAt: version.created_at,
+          createdBy: version.created_by,
+          creatorName: version.profiles?.full_name || version.profiles?.email || 'Unknown user',
+          snapshotJson: version.snapshot_json
         }))}
       />
     </div>

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } fr
 import { WaveformPlayer } from '@/components/project/waveform-player';
 import { autoSyncStemOffsets, type StemSyncResult } from '@/lib/audio/stem-auto-sync';
 import { useTimelineStore } from '@/store/timeline-store';
+import type { Json } from '@/types/database';
 
 type PlaybackTrack = {
   id: string;
@@ -33,6 +34,17 @@ type TrackPlaybackPanelProps = {
   projectId: string;
   tracks: PlaybackTrack[];
   initialComments: ReviewComment[];
+  initialVersions: ProjectVersionItem[];
+};
+
+type ProjectVersionItem = {
+  id: string;
+  label: string;
+  notes: string | null;
+  createdAt: string;
+  createdBy: string;
+  creatorName: string;
+  snapshotJson: Json;
 };
 
 type TrackRuntime = {
@@ -53,7 +65,7 @@ function formatDate(value: string) {
   return new Date(value).toLocaleString();
 }
 
-export function TrackPlaybackPanel({ projectId, tracks, initialComments }: TrackPlaybackPanelProps) {
+export function TrackPlaybackPanel({ projectId, tracks, initialComments, initialVersions }: TrackPlaybackPanelProps) {
   const OFFSET_NUDGE_FINE = 0.01;
   const OFFSET_NUDGE_COARSE = 0.1;
   const cursorMs = useTimelineStore((state) => state.cursorMs);
@@ -81,6 +93,13 @@ export function TrackPlaybackPanel({ projectId, tracks, initialComments }: Track
   const [offsetSaving, setOffsetSaving] = useState<Record<string, boolean>>({});
   const [offsetErrorByTrack, setOffsetErrorByTrack] = useState<Record<string, string | null>>({});
   const [comments, setComments] = useState(initialComments);
+  const [versions, setVersions] = useState(initialVersions);
+  const [selectedVersionId, setSelectedVersionId] = useState(initialVersions[0]?.id ?? null);
+  const [versionLabelInput, setVersionLabelInput] = useState('');
+  const [versionNotesInput, setVersionNotesInput] = useState('');
+  const [versionActionMessage, setVersionActionMessage] = useState<string | null>(null);
+  const [isSavingVersion, setIsSavingVersion] = useState(false);
+  const [isRestoringOffsets, setIsRestoringOffsets] = useState(false);
   const [commentText, setCommentText] = useState('');
   const [commentTimestampSec, setCommentTimestampSec] = useState(0);
   const [isSavingComment, setIsSavingComment] = useState(false);
@@ -91,6 +110,11 @@ export function TrackPlaybackPanel({ projectId, tracks, initialComments }: Track
     setReferenceTrackId((prev) => (tracks.some((track) => track.id === prev) ? prev : tracks[0]?.id || ''));
     setOffsetInputs(Object.fromEntries(tracks.map((track) => [track.id, track.offsetSec.toFixed(2)])));
   }, [tracks]);
+
+  useEffect(() => {
+    setVersions(initialVersions);
+    setSelectedVersionId((prev) => (initialVersions.some((version) => version.id === prev) ? prev : initialVersions[0]?.id ?? null));
+  }, [initialVersions]);
 
   const trackNameById = useMemo(() => new Map(trackList.map((track) => [track.id, track.name])), [trackList]);
 
@@ -107,6 +131,8 @@ export function TrackPlaybackPanel({ projectId, tracks, initialComments }: Track
   const sortedComments = useMemo(() => {
     return [...comments].sort((a, b) => a.timestampSec - b.timestampSec);
   }, [comments]);
+
+  const selectedVersion = useMemo(() => versions.find((entry) => entry.id === selectedVersionId) ?? null, [selectedVersionId, versions]);
 
   const stopAllAudio = useCallback(() => {
     Object.values(runtimeRef.current).forEach(({ audio }) => {
@@ -396,6 +422,96 @@ export function TrackPlaybackPanel({ projectId, tracks, initialComments }: Track
     [persistTrackOffset, seekTimeline, timelineSec]
   );
 
+  const createVersion = useCallback(async () => {
+    if (!versionLabelInput.trim()) {
+      setVersionActionMessage('Version label is required.');
+      return;
+    }
+
+    setIsSavingVersion(true);
+    setVersionActionMessage(null);
+
+    try {
+      const response = await fetch(`/api/projects/${projectId}/versions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          label: versionLabelInput.trim(),
+          notes: versionNotesInput.trim() || null
+        })
+      });
+      const payload = await response.json();
+
+      if (!response.ok) {
+        throw new Error(payload.error ?? 'Failed to save version.');
+      }
+
+      const version = payload.version as {
+        id: string;
+        created_by: string;
+        label: string;
+        notes: string | null;
+        created_at: string;
+        snapshot_json: Json;
+      };
+      const createdVersion: ProjectVersionItem = {
+        id: version.id,
+        createdBy: version.created_by,
+        label: version.label,
+        notes: version.notes,
+        createdAt: version.created_at,
+        creatorName: 'You',
+        snapshotJson: version.snapshot_json
+      };
+      setVersions((prev) => [createdVersion, ...prev]);
+      setSelectedVersionId(version.id);
+      setVersionLabelInput('');
+      setVersionNotesInput('');
+      setVersionActionMessage('Version saved.');
+    } catch (error) {
+      setVersionActionMessage(error instanceof Error ? error.message : 'Failed to save version.');
+    } finally {
+      setIsSavingVersion(false);
+    }
+  }, [projectId, versionLabelInput, versionNotesInput]);
+
+  const restoreOffsetsFromVersion = useCallback(async () => {
+    if (!selectedVersion) {
+      setVersionActionMessage('Select a version first.');
+      return;
+    }
+
+    setIsRestoringOffsets(true);
+    setVersionActionMessage(null);
+    try {
+      const response = await fetch(`/api/projects/${projectId}/versions/${selectedVersion.id}/restore-offsets`, {
+        method: 'POST'
+      });
+      const payload = await response.json();
+
+      if (!response.ok) {
+        throw new Error(payload.error ?? 'Failed to restore offsets.');
+      }
+
+      const restoredOffsets = (payload.restoredOffsets ?? []) as Array<{ id: string; offsetSec: number }>;
+      const nextOffsetMap = new Map(restoredOffsets.map((entry) => [entry.id, entry.offsetSec]));
+      setTrackList((prev) => prev.map((track) => ({ ...track, offsetSec: nextOffsetMap.get(track.id) ?? track.offsetSec })));
+      setOffsetInputs((prev) => {
+        const next = { ...prev };
+        restoredOffsets.forEach((entry) => {
+          next[entry.id] = entry.offsetSec.toFixed(2);
+        });
+        return next;
+      });
+      seekTimeline(timelineSec);
+      setVersionActionMessage('Track offsets restored from selected version.');
+    } catch (error) {
+      setVersionActionMessage(error instanceof Error ? error.message : 'Failed to restore offsets.');
+    } finally {
+      setIsRestoringOffsets(false);
+    }
+  }, [projectId, seekTimeline, selectedVersion, timelineSec]);
+
   return (
     <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">
       <div className="card p-4">
@@ -608,7 +724,72 @@ export function TrackPlaybackPanel({ projectId, tracks, initialComments }: Track
         </div>
       </div>
 
-      <aside className="card p-4">
+      <aside className="space-y-6">
+        <section className="card p-4">
+          <h2 className="text-lg font-medium">Save version</h2>
+          <p className="mt-1 text-xs text-muted">Capture a named metadata snapshot of tracks, offsets, and comments context.</p>
+          <div className="mt-3 space-y-2 rounded-lg border border-border bg-background p-3">
+            <label className="block text-xs font-medium">Version label</label>
+            <input
+              className="w-full rounded border border-border bg-background px-2 py-1 text-sm"
+              value={versionLabelInput}
+              onChange={(event) => setVersionLabelInput(event.target.value)}
+              placeholder="Mix pass A"
+            />
+            <label className="block text-xs font-medium">Notes (optional)</label>
+            <textarea
+              className="min-h-20 w-full rounded border border-border bg-background px-2 py-1 text-sm"
+              value={versionNotesInput}
+              onChange={(event) => setVersionNotesInput(event.target.value)}
+              placeholder="What changed in this snapshot?"
+            />
+            <button className="rounded bg-brand px-3 py-1 text-sm font-medium text-white" onClick={createVersion} disabled={isSavingVersion}>
+              {isSavingVersion ? 'Saving…' : 'Save Version'}
+            </button>
+          </div>
+        </section>
+
+        <section className="card p-4">
+          <h2 className="text-lg font-medium">Version history</h2>
+          <p className="mt-1 text-xs text-muted">Metadata snapshots only. Binary files are referenced, not duplicated.</p>
+          <ul className="mt-3 max-h-72 space-y-2 overflow-auto text-sm">
+            {versions.length === 0 ? (
+              <li className="text-muted">No versions yet.</li>
+            ) : (
+              versions.map((version) => (
+                <li key={version.id}>
+                  <button
+                    className={`w-full rounded border p-2 text-left ${selectedVersionId === version.id ? 'border-brand' : 'border-border bg-background'}`}
+                    onClick={() => setSelectedVersionId(version.id)}
+                  >
+                    <p className="font-medium">{version.label}</p>
+                    <p className="text-xs text-muted">{version.creatorName}</p>
+                    <p className="text-xs text-muted">{formatDate(version.createdAt)}</p>
+                    {version.notes ? <p className="mt-1 text-xs text-muted">{version.notes}</p> : null}
+                  </button>
+                </li>
+              ))
+            )}
+          </ul>
+          {selectedVersion ? (
+            <div className="mt-3 space-y-2 rounded-lg border border-border bg-background p-3">
+              <h3 className="text-sm font-medium">Selected snapshot metadata</h3>
+              <button
+                className="rounded border border-border px-3 py-1 text-xs"
+                onClick={restoreOffsetsFromVersion}
+                disabled={isRestoringOffsets}
+              >
+                {isRestoringOffsets ? 'Restoring…' : 'Restore Offsets From Version'}
+              </button>
+              <pre className="max-h-64 overflow-auto rounded border border-border bg-black/20 p-2 text-xs">
+                {JSON.stringify(selectedVersion.snapshotJson, null, 2)}
+              </pre>
+            </div>
+          ) : null}
+          {versionActionMessage ? <p className="mt-2 text-xs text-muted">{versionActionMessage}</p> : null}
+        </section>
+
+        <section className="card p-4">
         <h2 className="text-lg font-medium">Comments</h2>
         <p className="mt-1 text-xs text-muted">Add timeline notes like Figma or Frame.io, with optional track context.</p>
 
@@ -674,6 +855,7 @@ export function TrackPlaybackPanel({ projectId, tracks, initialComments }: Track
             ))
           )}
         </ul>
+        </section>
       </aside>
     </div>
   );

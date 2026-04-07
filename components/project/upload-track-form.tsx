@@ -106,18 +106,18 @@ export function UploadTrackForm({ projectId }: UploadTrackFormProps) {
 
     setUploads((current) => [...nextUploads, ...current]);
 
-    await Promise.all(
+    const uploadResults = await Promise.all(
       selectedFiles.map(async (file, index) => {
         const itemId = nextUploads[index].id;
 
         if (!isSupportedFile(file)) {
           updateUpload(itemId, (item) => ({ ...item, status: 'error', error: 'Unsupported file type.' }));
-          return;
+          return false;
         }
 
         if (file.size > MAX_FILE_SIZE_BYTES) {
           updateUpload(itemId, (item) => ({ ...item, status: 'error', error: 'File exceeds 250MB limit.' }));
-          return;
+          return false;
         }
 
         try {
@@ -163,16 +163,30 @@ export function UploadTrackForm({ projectId }: UploadTrackFormProps) {
           }
 
           updateUpload(itemId, (item) => ({ ...item, status: 'done', progress: 100 }));
-          router.refresh();
+          return true;
         } catch (error) {
           updateUpload(itemId, (item) => ({
             ...item,
             status: 'error',
             error: error instanceof Error ? error.message : 'Unexpected upload error.'
           }));
+          return false;
         }
       })
     );
+
+    const successfulUploads = uploadResults.filter(Boolean).length;
+    if (successfulUploads > 0) {
+      await fetch(`/api/projects/${projectId}/versions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          label: 'Upload snapshot',
+          notes: `Automatic snapshot after successful stem upload batch (${successfulUploads} file${successfulUploads === 1 ? '' : 's'}).`
+        })
+      });
+      router.refresh();
+    }
   };
 
   return (
