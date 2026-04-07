@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
+import { getProjectMembership, canEditProject } from '@/lib/project-members';
 import { createClient } from '@/lib/supabase/server';
 
 const completeUploadSchema = z.object({
@@ -31,6 +32,11 @@ export async function POST(request: Request) {
   }
 
   const { projectId, fileName, filePath, mimeType, fileSizeBytes, durationSec, sampleRate, channelCount } = parsed.data;
+
+  const membership = await getProjectMembership(supabase, projectId, user.id);
+  if (!membership || !canEditProject(membership.role)) {
+    return NextResponse.json({ error: 'Only owners and editors can upload tracks.' }, { status: 403 });
+  }
 
   if (!filePath.startsWith(`${projectId}/`)) {
     return NextResponse.json({ error: 'Invalid storage path for project.' }, { status: 400 });

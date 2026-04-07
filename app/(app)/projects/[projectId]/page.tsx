@@ -1,5 +1,8 @@
+import { notFound } from 'next/navigation';
+import { ProjectMembersPanel } from '@/components/project/project-members-panel';
 import { TrackPlaybackPanel } from '@/components/project/track-playback-panel';
 import { UploadTrackForm } from '@/components/project/upload-track-form';
+import { canEditProject, getProjectMembership, type ProjectRole } from '@/lib/project-members';
 import { createClient } from '@/lib/supabase/server';
 import type { Json, Track } from '@/types/database';
 
@@ -22,26 +25,15 @@ type CommentRecord = {
   } | null;
 };
 
-async function getProjectData(projectId: string) {
-  const supabase = createClient();
-  const [{ data: tracks }, { data: comments }, { data: versions }] = await Promise.all([
-    supabase.from('tracks').select('*').eq('project_id', projectId).order('created_at', { ascending: true }),
-    supabase
-      .from('comments')
-      .select('id, project_id, track_id, author_id, timestamp_sec, body, resolved, created_at, profiles:author_id(full_name, email)')
-      .eq('project_id', projectId)
-      .order('timestamp_sec', { ascending: true })
-      .limit(200),
-    supabase
-      .from('project_versions')
-      .select('id, label, notes, created_at, created_by, snapshot_json, profiles:created_by(full_name, email)')
-      .eq('project_id', projectId)
-      .order('created_at', { ascending: false })
-      .limit(100)
-  ]);
-
-  return { tracks: (tracks ?? []) as Track[], comments: (comments ?? []) as CommentRecord[], versions: (versions ?? []) as ProjectVersionRecord[] };
-}
+type ProjectMemberRecord = {
+  user_id: string;
+  role: ProjectRole;
+  created_at: string;
+  profiles: {
+    full_name: string | null;
+    email: string | null;
+  } | null;
+};
 
 type ProjectVersionRecord = {
   id: string;
@@ -56,6 +48,37 @@ type ProjectVersionRecord = {
   } | null;
 };
 
+async function getProjectData(projectId: string) {
+  const supabase = createClient();
+  const [{ data: tracks }, { data: comments }, { data: versions }, { data: members }] = await Promise.all([
+    supabase.from('tracks').select('*').eq('project_id', projectId).order('created_at', { ascending: true }),
+    supabase
+      .from('comments')
+      .select('id, project_id, track_id, author_id, timestamp_sec, body, resolved, created_at, profiles:author_id(full_name, email)')
+      .eq('project_id', projectId)
+      .order('timestamp_sec', { ascending: true })
+      .limit(200),
+    supabase
+      .from('project_versions')
+      .select('id, label, notes, created_at, created_by, snapshot_json, profiles:created_by(full_name, email)')
+      .eq('project_id', projectId)
+      .order('created_at', { ascending: false })
+      .limit(100),
+    supabase
+      .from('project_members')
+      .select('user_id, role, created_at, profiles:user_id(full_name, email)')
+      .eq('project_id', projectId)
+      .order('created_at', { ascending: true })
+  ]);
+
+  return {
+    tracks: (tracks ?? []) as Track[],
+    comments: (comments ?? []) as CommentRecord[],
+    versions: (versions ?? []) as ProjectVersionRecord[],
+    members: (members ?? []) as ProjectMemberRecord[]
+  };
+}
+
 async function getSignedTrackUrl(path: string | undefined) {
   if (!path) return undefined;
 
@@ -65,7 +88,22 @@ async function getSignedTrackUrl(path: string | undefined) {
 }
 
 export default async function ProjectPage({ params }: { params: { projectId: string } }) {
-  const { tracks, comments, versions } = await getProjectData(params.projectId);
+  const supabase = createClient();
+  const {
+    data: { user }
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    notFound();
+  }
+
+  const membership = await getProjectMembership(supabase, params.projectId, user.id);
+  if (!membership) {
+    notFound();
+  }
+
+  const { tracks, comments, versions, members } = await getProjectData(params.projectId);
+  const canEdit = canEditProject(membership.role);
 
   const tracksWithUrls: ProjectTrack[] = await Promise.all(
     tracks.map(async (track) => ({
@@ -81,11 +119,28 @@ export default async function ProjectPage({ params }: { params: { projectId: str
           <h1 className="text-2xl font-semibold">Project Session</h1>
           <p className="text-sm text-muted">Track-level review, uploads, and version context.</p>
         </div>
-        <UploadTrackForm projectId={params.projectId} />
+        <UploadTrackForm projectId={params.projectId} canUpload={canEdit} />
       </section>
+
+      <ProjectMembersPanel
+        projectId={params.projectId}
+        currentUserRole={membership.role}
+        members={members.map((member) => ({
+          userId: member.user_id,
+          role: member.role,
+          createdAt: member.created_at,
+          fullName: member.profiles?.full_name ?? null,
+          email: member.profiles?.email ?? null
+        }))}
+      />
 
       <TrackPlaybackPanel
         projectId={params.projectId}
+        permissions={{
+          role: membership.role,
+          canEdit,
+          canComment: true
+        }}
         tracks={tracksWithUrls.map((track) => ({
           id: track.id,
           name: track.name,

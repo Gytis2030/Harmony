@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
+import { getProjectMembership, canEditProject } from '@/lib/project-members';
 import { createClient } from '@/lib/supabase/server';
 
 const signedUrlSchema = z.object({
@@ -28,10 +29,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Unauthorized.' }, { status: 401 });
   }
 
-  const { data: project } = await supabase.from('projects').select('id').eq('id', parsed.data.projectId).maybeSingle();
+  const membership = await getProjectMembership(supabase, parsed.data.projectId, user.id);
 
-  if (!project) {
+  if (!membership) {
     return NextResponse.json({ error: 'Project not found or access denied.' }, { status: 404 });
+  }
+
+  if (!canEditProject(membership.role)) {
+    return NextResponse.json({ error: 'Only owners and editors can upload tracks.' }, { status: 403 });
   }
 
   const safeName = `${Date.now()}-${sanitizeFileName(parsed.data.fileName)}`;

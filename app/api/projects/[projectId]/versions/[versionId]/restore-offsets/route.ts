@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { canEditProject, getProjectMembership } from '@/lib/project-members';
 import { createClient } from '@/lib/supabase/server';
 import type { ProjectVersionSnapshotV1 } from '@/lib/project-versions';
 import type { Json } from '@/types/database';
@@ -17,6 +18,11 @@ export async function POST(_: Request, { params }: { params: { projectId: string
 
   if (!user) {
     return NextResponse.json({ error: 'Unauthorized.' }, { status: 401 });
+  }
+
+  const membership = await getProjectMembership(supabase, params.projectId, user.id);
+  if (!membership || !canEditProject(membership.role)) {
+    return NextResponse.json({ error: 'Only owners and editors can restore offsets.' }, { status: 403 });
   }
 
   const { data: version, error: versionError } = await supabase
