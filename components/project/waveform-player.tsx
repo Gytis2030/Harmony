@@ -6,26 +6,27 @@ import WaveSurfer from 'wavesurfer.js';
 type WaveformPlayerProps = {
   trackId: string;
   audioUrl?: string;
-  onReady: (trackId: string, value: { audio: HTMLAudioElement; durationSec: number }) => void;
+  onReady: (trackId: string, value: { waveSurfer: WaveSurfer; durationSec: number }) => void;
 };
 
 export function WaveformPlayer({ trackId, audioUrl, onReady }: WaveformPlayerProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const waveSurferRef = useRef<WaveSurfer | null>(null);
+  const hasInitializedRef = useRef(false);
+  const isReadyRef = useRef(false);
   const [status, setStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
 
   useEffect(() => {
-    if (!containerRef.current || !audioUrl) {
+    if (!containerRef.current || !audioUrl || hasInitializedRef.current) {
       return;
     }
+    hasInitializedRef.current = true;
     setStatus('loading');
-
-    const audio = new Audio();
-    audio.preload = 'auto';
-    audio.src = audioUrl;
+    isReadyRef.current = false;
 
     const waveSurfer = WaveSurfer.create({
       container: containerRef.current,
-      media: audio,
+      url: audioUrl,
       waveColor: '#48486a',
       progressColor: '#6D5EF8',
       cursorWidth: 0,
@@ -36,25 +37,44 @@ export function WaveformPlayer({ trackId, audioUrl, onReady }: WaveformPlayerPro
       normalize: true,
       interact: false
     });
+    waveSurferRef.current = waveSurfer;
 
     const handleReady = () => {
+      isReadyRef.current = true;
       setStatus('ready');
-      onReady(trackId, { audio, durationSec: waveSurfer.getDuration() || audio.duration || 0 });
+      waveSurfer.setPlaybackRate(1);
+      console.log(`[WaveformPlayer] ready track=${trackId} duration=${waveSurfer.getDuration()}`);
+      onReady(trackId, { waveSurfer, durationSec: waveSurfer.getDuration() || 0 });
     };
     const handleError = () => {
+      isReadyRef.current = true;
       setStatus('error');
     };
 
     waveSurfer.on('ready', handleReady);
     waveSurfer.on('error', handleError);
-    waveSurfer.load(audioUrl);
 
     return () => {
-      waveSurfer.un('ready', handleReady);
-      waveSurfer.un('error', handleError);
-      waveSurfer.destroy();
-      audio.pause();
-      audio.src = '';
+      const instance = waveSurferRef.current;
+      if (!instance) return;
+
+      instance.un('ready', handleReady);
+      instance.un('error', handleError);
+
+      if (!isReadyRef.current) {
+        console.log(`[WaveformPlayer] skip destroy while loading track=${trackId}`);
+        waveSurferRef.current = null;
+        return;
+      }
+
+      try {
+        instance.stop();
+        instance.destroy();
+      } catch (error) {
+        console.warn(`[WaveformPlayer] destroy failed track=${trackId}`, error);
+      } finally {
+        waveSurferRef.current = null;
+      }
     };
   }, [audioUrl, onReady, trackId]);
 
