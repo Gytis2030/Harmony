@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { createProjectSchema } from '@/lib/validation/project';
+import { createProjectVersion } from '@/lib/project-versions';
 
 export async function POST(request: Request) {
   const payload = await request.json();
@@ -44,24 +45,16 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: memberError.message }, { status: 500 });
   }
 
-  const { error: versionError } = await supabase.from('project_versions').insert({
-    project_id: project.id,
-    created_by: user.id,
-    label: 'Initial',
-    snapshot_json: {
-      metadata: {
-        name: project.name,
-        description: project.description,
-        bpm: project.bpm,
-        keySignature: project.key_signature
-      },
-      tracks: []
-    }
-  });
-
-  if (versionError) {
+  try {
+    await createProjectVersion(supabase, {
+      projectId: project.id,
+      createdBy: user.id,
+      label: 'Initial',
+      notes: 'Automatic initial project snapshot.'
+    });
+  } catch (error) {
     await supabase.from('projects').delete().eq('id', project.id);
-    return NextResponse.json({ error: versionError.message }, { status: 500 });
+    return NextResponse.json({ error: error instanceof Error ? error.message : 'Failed to create initial version.' }, { status: 500 });
   }
 
   return NextResponse.json({ id: project.id });
