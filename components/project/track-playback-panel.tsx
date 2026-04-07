@@ -54,6 +54,8 @@ function formatDate(value: string) {
 }
 
 export function TrackPlaybackPanel({ projectId, tracks, initialComments }: TrackPlaybackPanelProps) {
+  const OFFSET_NUDGE_FINE = 0.01;
+  const OFFSET_NUDGE_COARSE = 0.1;
   const cursorMs = useTimelineStore((state) => state.cursorMs);
   const setCursorMs = useTimelineStore((state) => state.setCursorMs);
   const selectedTrackId = useTimelineStore((state) => state.selectedTrackId);
@@ -75,6 +77,9 @@ export function TrackPlaybackPanel({ projectId, tracks, initialComments }: Track
   const [mutedTrackIds, setMutedTrackIds] = useState<Record<string, boolean>>({});
   const [soloTrackIds, setSoloTrackIds] = useState<Record<string, boolean>>({});
   const [runtimeVersion, setRuntimeVersion] = useState(0);
+  const [offsetInputs, setOffsetInputs] = useState<Record<string, string>>({});
+  const [offsetSaving, setOffsetSaving] = useState<Record<string, boolean>>({});
+  const [offsetErrorByTrack, setOffsetErrorByTrack] = useState<Record<string, string | null>>({});
   const [comments, setComments] = useState(initialComments);
   const [commentText, setCommentText] = useState('');
   const [commentTimestampSec, setCommentTimestampSec] = useState(0);
@@ -84,6 +89,7 @@ export function TrackPlaybackPanel({ projectId, tracks, initialComments }: Track
   useEffect(() => {
     setTrackList(tracks);
     setReferenceTrackId((prev) => (tracks.some((track) => track.id === prev) ? prev : tracks[0]?.id || ''));
+    setOffsetInputs(Object.fromEntries(tracks.map((track) => [track.id, track.offsetSec.toFixed(2)])));
   }, [tracks]);
 
   const trackNameById = useMemo(() => new Map(trackList.map((track) => [track.id, track.name])), [trackList]);
@@ -329,6 +335,13 @@ export function TrackPlaybackPanel({ projectId, tracks, initialComments }: Track
 
       const nextOffsets = new Map(results.map((result) => [result.trackId, result.offsetSec]));
       setTrackList((prev) => prev.map((track) => ({ ...track, offsetSec: nextOffsets.get(track.id) ?? track.offsetSec })));
+      setOffsetInputs((prev) => {
+        const next = { ...prev };
+        results.forEach((result) => {
+          next[result.trackId] = result.offsetSec.toFixed(2);
+        });
+        return next;
+      });
       setSyncResults(results);
       seekTimeline(timelineSec);
 
@@ -341,6 +354,47 @@ export function TrackPlaybackPanel({ projectId, tracks, initialComments }: Track
       setIsSyncingStems(false);
     }
   }, [projectId, referenceTrackId, seekTimeline, timelineSec, trackList]);
+
+  const persistTrackOffset = useCallback(
+    async (trackId: string, nextOffsetSec: number) => {
+      setOffsetSaving((prev) => ({ ...prev, [trackId]: true }));
+      setOffsetErrorByTrack((prev) => ({ ...prev, [trackId]: null }));
+
+      try {
+        const response = await fetch(`/api/projects/${projectId}/tracks/sync`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            offsets: [{ trackId, offsetSec: nextOffsetSec }]
+          })
+        });
+
+        const payload = await response.json();
+        if (!response.ok) {
+          throw new Error(payload.error ?? 'Failed to save track offset.');
+        }
+      } catch (error) {
+        setOffsetErrorByTrack((prev) => ({
+          ...prev,
+          [trackId]: error instanceof Error ? error.message : 'Failed to save track offset.'
+        }));
+      } finally {
+        setOffsetSaving((prev) => ({ ...prev, [trackId]: false }));
+      }
+    },
+    [projectId]
+  );
+
+  const updateTrackOffset = useCallback(
+    (trackId: string, nextOffsetSec: number) => {
+      const sanitizedOffset = Number(Math.max(0, nextOffsetSec).toFixed(3));
+      setTrackList((prev) => prev.map((track) => (track.id === trackId ? { ...track, offsetSec: sanitizedOffset } : track)));
+      setOffsetInputs((prev) => ({ ...prev, [trackId]: sanitizedOffset.toFixed(2) }));
+      seekTimeline(timelineSec);
+      void persistTrackOffset(trackId, sanitizedOffset);
+    },
+    [persistTrackOffset, seekTimeline, timelineSec]
+  );
 
   return (
     <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">
@@ -456,9 +510,74 @@ export function TrackPlaybackPanel({ projectId, tracks, initialComments }: Track
                       >
                         Solo
                       </button>
-                      <span className="text-muted">Offset: {track.offsetSec.toFixed(2)}s</span>
+                      <div className="flex items-center gap-1 rounded border border-border px-1 py-1">
+                        <button
+                          className="rounded border border-border px-2 py-0.5"
+                          onClick={() => updateTrackOffset(track.id, track.offsetSec - OFFSET_NUDGE_COARSE)}
+                          title={`Nudge left by ${OFFSET_NUDGE_COARSE}s`}
+                        >
+                          -0.1
+                        </button>
+                        <button
+                          className="rounded border border-border px-2 py-0.5"
+                          onClick={() => updateTrackOffset(track.id, track.offsetSec - OFFSET_NUDGE_FINE)}
+                          title={`Nudge left by ${OFFSET_NUDGE_FINE}s`}
+                        >
+                          -0.01
+                        </button>
+                        <input
+                          className="w-20 rounded border border-border bg-background px-2 py-0.5 text-right"
+                          type="number"
+                          min={0}
+                          step={0.01}
+                          value={offsetInputs[track.id] ?? track.offsetSec.toFixed(2)}
+                          onChange={(event) => {
+                            const value = event.target.value;
+                            setOffsetInputs((prev) => ({ ...prev, [track.id]: value }));
+                            const parsed = Number(value);
+                            if (!Number.isNaN(parsed) && value !== '') {
+                              setTrackList((prev) =>
+                                prev.map((entry) => (entry.id === track.id ? { ...entry, offsetSec: Math.max(0, parsed) } : entry))
+                              );
+                              seekTimeline(timelineSec);
+                            }
+                          }}
+                          onBlur={() => {
+                            const parsed = Number(offsetInputs[track.id]);
+                            updateTrackOffset(track.id, Number.isNaN(parsed) ? track.offsetSec : parsed);
+                          }}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter') {
+                              const parsed = Number(offsetInputs[track.id]);
+                              updateTrackOffset(track.id, Number.isNaN(parsed) ? track.offsetSec : parsed);
+                              (event.target as HTMLInputElement).blur();
+                            }
+                          }}
+                          aria-label={`Offset for ${track.name} in seconds`}
+                        />
+                        <span className="text-muted">s</span>
+                        <button
+                          className="rounded border border-border px-2 py-0.5"
+                          onClick={() => updateTrackOffset(track.id, track.offsetSec + OFFSET_NUDGE_FINE)}
+                          title={`Nudge right by ${OFFSET_NUDGE_FINE}s`}
+                        >
+                          +0.01
+                        </button>
+                        <button
+                          className="rounded border border-border px-2 py-0.5"
+                          onClick={() => updateTrackOffset(track.id, track.offsetSec + OFFSET_NUDGE_COARSE)}
+                          title={`Nudge right by ${OFFSET_NUDGE_COARSE}s`}
+                        >
+                          +0.1
+                        </button>
+                        <button className="rounded border border-border px-2 py-0.5" onClick={() => updateTrackOffset(track.id, 0)}>
+                          Reset Offset
+                        </button>
+                      </div>
+                      {offsetSaving[track.id] ? <span className="text-muted">Saving…</span> : null}
                     </div>
                   </div>
+                  {offsetErrorByTrack[track.id] ? <p className="mb-2 text-xs text-red-500">{offsetErrorByTrack[track.id]}</p> : null}
 
                   <div
                     className="relative h-20 overflow-hidden rounded border border-border bg-background/60"
