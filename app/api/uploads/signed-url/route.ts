@@ -27,9 +27,7 @@ export async function POST(request: Request) {
   const safeName = `${Date.now()}-${parsed.data.fileName.replace(/\s+/g, '-').toLowerCase()}`;
   const storagePath = `${parsed.data.projectId}/${safeName}`;
 
-  const { data: signed, error: signError } = await supabase.storage
-    .from('tracks')
-    .createSignedUploadUrl(storagePath, { upsert: false });
+  const { data: signed, error: signError } = await supabase.storage.from('tracks').createSignedUploadUrl(storagePath, { upsert: false });
 
   if (signError || !signed) {
     return NextResponse.json({ error: signError?.message ?? 'Failed to create upload URL' }, { status: 500 });
@@ -38,9 +36,9 @@ export async function POST(request: Request) {
   await supabase.from('tracks').insert({
     project_id: parsed.data.projectId,
     file_path: storagePath,
-    original_filename: parsed.data.fileName,
+    name: parsed.data.fileName,
     uploaded_by: user.id,
-    offset_ms: 0
+    offset_sec: 0
   });
 
   return NextResponse.json({ signedUrl: signed.signedUrl, path: storagePath });

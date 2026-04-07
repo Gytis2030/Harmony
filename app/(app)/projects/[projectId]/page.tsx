@@ -14,7 +14,7 @@ async function getProjectData(projectId: string) {
     .from('comments')
     .select('*')
     .eq('project_id', projectId)
-    .order('timestamp_ms', { ascending: true })
+    .order('timestamp_sec', { ascending: true })
     .limit(40);
 
   return { tracks: (tracks ?? []) as Track[], comments: (comments ?? []) as Comment[] };
@@ -54,9 +54,9 @@ export default async function ProjectPage({ params }: { params: { projectId: str
             ) : (
               tracks.map((track) => (
                 <li key={track.id} className="rounded-lg border border-border bg-background p-3">
-                  <p className="font-medium">{track.original_filename}</p>
+                  <p className="font-medium">{track.name}</p>
                   <p className="mt-1 text-muted">
-                    Offset: {track.offset_ms}ms · BPM: {track.bpm_detected ?? 'n/a'} · Duration: {track.duration_ms ?? 'n/a'}ms
+                    Offset: {track.offset_sec}s · Sample rate: {track.sample_rate ?? 'n/a'} · Duration: {track.duration_sec ?? 'n/a'}s
                   </p>
                 </li>
               ))
@@ -71,8 +71,8 @@ export default async function ProjectPage({ params }: { params: { projectId: str
             ) : (
               comments.map((comment) => (
                 <li key={comment.id} className="rounded-lg border border-border bg-background p-3">
-                  <p className="text-muted">@ {comment.timestamp_ms}ms</p>
-                  <p className="mt-1">{comment.content}</p>
+                  <p className="text-muted">@ {comment.timestamp_sec}s</p>
+                  <p className="mt-1">{comment.body}</p>
                 </li>
               ))
             )}
