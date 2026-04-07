@@ -21,13 +21,23 @@ export async function POST(request: Request) {
 
   const { data, error } = await supabase
     .from('projects')
-    .insert({ name: parsed.data.name, description: parsed.data.description ?? null, owner_id: user.id })
+    .insert({
+      name: parsed.data.name,
+      description: parsed.data.description ?? null,
+      owner_id: user.id
+    })
     .select('id')
     .single();
 
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error || !data) {
+    return NextResponse.json({ error: error?.message ?? 'Failed to create project' }, { status: 500 });
   }
+
+  await supabase.from('project_members').insert({
+    project_id: data.id,
+    user_id: user.id,
+    role: 'owner'
+  });
 
   return NextResponse.json({ id: data.id });
 }
