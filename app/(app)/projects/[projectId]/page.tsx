@@ -20,11 +20,28 @@ type CommentRecord = {
   body: string;
   resolved: boolean;
   created_at: string;
-  profiles: {
+  profiles:
+    | {
+        full_name: string | null;
+        email: string | null;
+      }
+    | {
+        full_name: string | null;
+        email: string | null;
+      }[]
+    | null;
+};
+
+type ProfileLookup =
+  | {
     full_name: string | null;
     email: string | null;
-  } | null;
-};
+  }
+  | {
+      full_name: string | null;
+      email: string | null;
+    }[]
+  | null;
 
 type ProjectMemberRecord = {
   user_id: string;
@@ -41,11 +58,13 @@ type ProjectVersionRecord = {
   created_at: string;
   created_by: string;
   snapshot_json: Json;
-  profiles: {
-    full_name: string | null;
-    email: string | null;
-  } | null;
+  profiles: ProfileLookup;
 };
+
+function getProfileDisplayName(profile: ProfileLookup): string {
+  const resolved = Array.isArray(profile) ? profile[0] : profile;
+  return resolved?.full_name || resolved?.email || 'Unknown user';
+}
 
 async function getProjectData(projectId: string) {
   const supabase = createClient();
@@ -165,7 +184,7 @@ export default async function ProjectPage({ params }: { params: { projectId: str
           projectId: comment.project_id,
           trackId: comment.track_id,
           authorId: comment.author_id,
-          authorName: comment.profiles?.full_name || comment.profiles?.email || 'Unknown user',
+          authorName: getProfileDisplayName(comment.profiles),
           timestampSec: comment.timestamp_sec,
           body: comment.body,
           resolved: comment.resolved,
@@ -177,7 +196,7 @@ export default async function ProjectPage({ params }: { params: { projectId: str
           notes: version.notes,
           createdAt: version.created_at,
           createdBy: version.created_by,
-          creatorName: version.profiles?.full_name || version.profiles?.email || 'Unknown user',
+          creatorName: getProfileDisplayName(version.profiles),
           snapshotJson: version.snapshot_json
         }))}
       />

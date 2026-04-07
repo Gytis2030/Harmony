@@ -197,7 +197,47 @@ export type Database = {
       };
     };
     Views: Record<string, never>;
-    Functions: Record<string, never>;
+    Functions: {
+      is_project_member: {
+        Args: {
+          target_project_id: string;
+        };
+        Returns: boolean;
+      };
+      find_profile_by_email_for_project: {
+        Args: {
+          target_project_id: string;
+          target_email: string;
+        };
+        Returns: {
+          id: string;
+          email: string;
+          full_name: string | null;
+        }[];
+      };
+      list_project_members_with_profiles: {
+        Args: {
+          target_project_id: string;
+        };
+        Returns: {
+          user_id: string;
+          role: 'owner' | 'editor' | 'viewer';
+          created_at: string;
+          full_name: string | null;
+          email: string;
+        }[];
+      };
+      update_project_track_offsets_atomic: {
+        Args: {
+          target_project_id: string;
+          offset_updates: Json;
+        };
+        Returns: {
+          id: string;
+          offset_sec: number;
+        }[];
+      };
+    };
     Enums: Record<string, never>;
     CompositeTypes: Record<string, never>;
   };

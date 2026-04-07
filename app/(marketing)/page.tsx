@@ -1,6 +1,8 @@
 import Link from 'next/link';
 import { EnvBanner } from '@/components/ui/env-banner';
 
+export const dynamic = 'force-dynamic';
+
 export default function LandingPage() {
   return (
     <main className="mx-auto flex min-h-screen max-w-5xl flex-col justify-center px-6 py-16">
