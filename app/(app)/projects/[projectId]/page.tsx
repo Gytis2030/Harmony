@@ -1,10 +1,25 @@
 import { TrackPlaybackPanel } from '@/components/project/track-playback-panel';
 import { UploadTrackForm } from '@/components/project/upload-track-form';
 import { createClient } from '@/lib/supabase/server';
-import type { Comment, Track } from '@/types/database';
+import type { Track } from '@/types/database';
 
 type ProjectTrack = Track & {
   signedUrl?: string;
+};
+
+type CommentRecord = {
+  id: string;
+  project_id: string;
+  track_id: string | null;
+  author_id: string;
+  timestamp_sec: number;
+  body: string;
+  resolved: boolean;
+  created_at: string;
+  profiles: {
+    full_name: string | null;
+    email: string | null;
+  } | null;
 };
 
 async function getProjectData(projectId: string) {
@@ -16,12 +31,12 @@ async function getProjectData(projectId: string) {
     .order('created_at', { ascending: true });
   const { data: comments } = await supabase
     .from('comments')
-    .select('*')
+    .select('id, project_id, track_id, author_id, timestamp_sec, body, resolved, created_at, profiles:author_id(full_name, email)')
     .eq('project_id', projectId)
     .order('timestamp_sec', { ascending: true })
-    .limit(40);
+    .limit(200);
 
-  return { tracks: (tracks ?? []) as Track[], comments: (comments ?? []) as Comment[] };
+  return { tracks: (tracks ?? []) as Track[], comments: (comments ?? []) as CommentRecord[] };
 }
 
 async function getSignedTrackUrl(path: string | undefined) {
@@ -52,36 +67,31 @@ export default async function ProjectPage({ params }: { params: { projectId: str
         <UploadTrackForm projectId={params.projectId} />
       </section>
 
-      <section className="grid gap-6 lg:grid-cols-2">
-        <TrackPlaybackPanel
-          tracks={tracksWithUrls.map((track) => ({
-            id: track.id,
-            name: track.name,
-            mimeType: track.mime_type,
-            fileSizeBytes: track.file_size_bytes,
-            durationSec: track.duration_sec,
-            sampleRate: track.sample_rate,
-            channelCount: track.channel_count,
-            offsetSec: track.offset_sec,
-            signedUrl: track.signedUrl
-          }))}
-        />
-        <div className="card p-4">
-          <h2 className="text-lg font-medium">Timeline comments</h2>
-          <ul className="mt-3 space-y-2 text-sm">
-            {comments.length === 0 ? (
-              <li className="text-muted">No comments yet.</li>
-            ) : (
-              comments.map((comment) => (
-                <li key={comment.id} className="rounded-lg border border-border bg-background p-3">
-                  <p className="text-muted">@ {comment.timestamp_sec}s</p>
-                  <p className="mt-1">{comment.body}</p>
-                </li>
-              ))
-            )}
-          </ul>
-        </div>
-      </section>
+      <TrackPlaybackPanel
+        projectId={params.projectId}
+        tracks={tracksWithUrls.map((track) => ({
+          id: track.id,
+          name: track.name,
+          mimeType: track.mime_type,
+          fileSizeBytes: track.file_size_bytes,
+          durationSec: track.duration_sec,
+          sampleRate: track.sample_rate,
+          channelCount: track.channel_count,
+          offsetSec: track.offset_sec,
+          signedUrl: track.signedUrl
+        }))}
+        initialComments={comments.map((comment) => ({
+          id: comment.id,
+          projectId: comment.project_id,
+          trackId: comment.track_id,
+          authorId: comment.author_id,
+          authorName: comment.profiles?.full_name || comment.profiles?.email || 'Unknown user',
+          timestampSec: comment.timestamp_sec,
+          body: comment.body,
+          resolved: comment.resolved,
+          createdAt: comment.created_at
+        }))}
+      />
     </div>
   );
 }
