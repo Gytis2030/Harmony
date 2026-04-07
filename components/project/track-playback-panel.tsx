@@ -18,6 +18,7 @@ type PlaybackTrack = {
   channelCount: number | null;
   offsetSec: number;
   signedUrl?: string;
+  signedUrlExpiresAtMs?: number;
 };
 
 type ReviewComment = {
@@ -112,14 +113,20 @@ export function TrackPlaybackPanel({ projectId, permissions, tracks, initialComm
   const [commentTimestampSec, setCommentTimestampSec] = useState(0);
   const [isSavingComment, setIsSavingComment] = useState(false);
   const [commentError, setCommentError] = useState<string | null>(null);
+  const isPlayingRef = useRef(false);
 
   const isEditDisabled = !permissions.canEdit;
+
+  useEffect(() => {
+    isPlayingRef.current = isPlaying;
+  }, [isPlaying]);
 
   useEffect(() => {
     setTrackList(tracks);
     setReferenceTrackId((prev) => (tracks.some((track) => track.id === prev) ? prev : tracks[0]?.id || ''));
     setOffsetInputs(Object.fromEntries(tracks.map((track) => [track.id, track.offsetSec.toFixed(2)])));
-  }, [tracks]);
+    setSelectedTrackId(selectedTrackId && tracks.some((track) => track.id === selectedTrackId) ? selectedTrackId : null);
+  }, [selectedTrackId, setSelectedTrackId, tracks]);
 
   useEffect(() => {
     setVersions(initialVersions);
@@ -181,13 +188,13 @@ export function TrackPlaybackPanel({ projectId, permissions, tracks, initialComm
   );
 
   const seekTimeline = useCallback(
-    (nextTimelineSec: number) => {
+    (nextTimelineSec: number, shouldPlayOverride?: boolean) => {
       const bounded = Math.max(0, Math.min(nextTimelineSec, projectDurationSec || 0));
       setTimelineSec(bounded);
       setCursorMs(Math.floor(bounded * 1000));
-      syncAudiosToTimeline(bounded, isPlaying);
+      syncAudiosToTimeline(bounded, shouldPlayOverride ?? isPlayingRef.current);
     },
-    [isPlaying, projectDurationSec, setCursorMs, syncAudiosToTimeline]
+    [projectDurationSec, setCursorMs, syncAudiosToTimeline]
   );
 
   useEffect(() => {
@@ -197,13 +204,14 @@ export function TrackPlaybackPanel({ projectId, permissions, tracks, initialComm
   useEffect(() => {
     if (pendingSeekMs == null) return;
 
-    seekTimeline(pendingSeekMs / 1000);
     setIsPlaying(false);
+    seekTimeline(pendingSeekMs / 1000, false);
     clearPendingSeek();
   }, [clearPendingSeek, pendingSeekMs, seekTimeline]);
 
   useEffect(() => {
     if (!isPlaying) {
+      stopAllAudio();
       if (rafRef.current) {
         cancelAnimationFrame(rafRef.current);
         rafRef.current = null;
@@ -239,7 +247,7 @@ export function TrackPlaybackPanel({ projectId, permissions, tracks, initialComm
         rafRef.current = null;
       }
     };
-  }, [isPlaying, projectDurationSec, seekTimeline, syncAudiosToTimeline, timelineSec]);
+  }, [isPlaying, projectDurationSec, seekTimeline, stopAllAudio, syncAudiosToTimeline, timelineSec]);
 
   useEffect(() => {
     return () => {
@@ -251,6 +259,44 @@ export function TrackPlaybackPanel({ projectId, permissions, tracks, initialComm
     runtimeRef.current[trackId] = value;
     setRuntimeVersion((count) => count + 1);
   }, []);
+
+  const refreshTrackPlaybackUrl = useCallback(
+    async (trackId: string) => {
+      const response = await fetch(`/api/projects/${projectId}/tracks/${trackId}/playback-url`, {
+        method: 'POST'
+      });
+      if (!response.ok) {
+        throw new Error('Failed to refresh playback URL.');
+      }
+      const payload = (await response.json()) as { signedUrl: string; expiresAtMs: number };
+      setTrackList((prev) =>
+        prev.map((track) =>
+          track.id === trackId ? { ...track, signedUrl: payload.signedUrl, signedUrlExpiresAtMs: payload.expiresAtMs } : track
+        )
+      );
+      return payload.signedUrl;
+    },
+    [projectId]
+  );
+
+  const ensurePlaybackUrlsFresh = useCallback(async () => {
+    const now = Date.now();
+    const expirationBufferMs = 45_000;
+    const staleTracks = trackList.filter(
+      (track) => track.signedUrl && (!track.signedUrlExpiresAtMs || track.signedUrlExpiresAtMs - now < expirationBufferMs)
+    );
+    const refreshed = await Promise.all(
+      staleTracks.map(async (track) => ({
+        trackId: track.id,
+        signedUrl: await refreshTrackPlaybackUrl(track.id)
+      }))
+    );
+    const refreshedByTrackId = new Map(refreshed.map((entry) => [entry.trackId, entry.signedUrl]));
+    return trackList.map((track) => ({
+      ...track,
+      signedUrl: refreshedByTrackId.get(track.id) ?? track.signedUrl
+    }));
+  }, [refreshTrackPlaybackUrl, trackList]);
 
   const handleTimelineClick = useCallback(
     (event: MouseEvent<HTMLDivElement>, totalDurationSec: number) => {
@@ -365,8 +411,9 @@ export function TrackPlaybackPanel({ projectId, permissions, tracks, initialComm
     setSyncResults([]);
 
     try {
+      const tracksForSync = await ensurePlaybackUrlsFresh();
       const results = await autoSyncStemOffsets(
-        trackList.map((track) => ({ id: track.id, name: track.name, signedUrl: track.signedUrl })),
+        tracksForSync.map((track) => ({ id: track.id, name: track.name, signedUrl: track.signedUrl })),
         chosenReferenceId
       );
 
@@ -410,7 +457,7 @@ export function TrackPlaybackPanel({ projectId, permissions, tracks, initialComm
     } finally {
       setIsSyncingStems(false);
     }
-  }, [isEditDisabled, projectId, referenceTrackId, seekTimeline, timelineSec, trackList]);
+  }, [ensurePlaybackUrlsFresh, isEditDisabled, projectId, referenceTrackId, seekTimeline, timelineSec, trackList]);
 
   const persistTrackOffset = useCallback(
     async (trackId: string, nextOffsetSec: number) => {
@@ -569,7 +616,17 @@ export function TrackPlaybackPanel({ projectId, permissions, tracks, initialComm
         <div className="mt-4 rounded-lg border border-border bg-background p-3">
           {trackList.length === 0 ? <p className="text-sm text-muted">Upload stems to enable playback and sync controls.</p> : null}
           <div className="flex flex-wrap items-center gap-2">
-            <button className="rounded bg-brand px-3 py-1 text-sm font-medium text-white" onClick={() => setIsPlaying(true)}>
+            <button
+              className="rounded bg-brand px-3 py-1 text-sm font-medium text-white"
+              onClick={async () => {
+                try {
+                  await ensurePlaybackUrlsFresh();
+                  setIsPlaying(true);
+                } catch (error) {
+                  notify(error instanceof Error ? error.message : 'Unable to start playback.', 'error');
+                }
+              }}
+            >
               Play
             </button>
             <button className="rounded border border-border px-3 py-1 text-sm" onClick={() => setIsPlaying(false)}>
@@ -579,7 +636,7 @@ export function TrackPlaybackPanel({ projectId, permissions, tracks, initialComm
               className="rounded border border-border px-3 py-1 text-sm"
               onClick={() => {
                 setIsPlaying(false);
-                seekTimeline(0);
+                seekTimeline(0, false);
               }}
             >
               Stop
@@ -710,12 +767,14 @@ export function TrackPlaybackPanel({ projectId, permissions, tracks, initialComm
                           }}
                           onBlur={() => {
                             if (isEditDisabled) return;
-                            const parsed = Number(offsetInputs[track.id]);
+                            const value = offsetInputs[track.id];
+                            const parsed = value === '' ? Number.NaN : Number(value);
                             updateTrackOffset(track.id, Number.isNaN(parsed) ? track.offsetSec : parsed);
                           }}
                           onKeyDown={(event) => {
                             if (event.key === 'Enter' && !isEditDisabled) {
-                              const parsed = Number(offsetInputs[track.id]);
+                              const value = offsetInputs[track.id];
+                              const parsed = value === '' ? Number.NaN : Number(value);
                               updateTrackOffset(track.id, Number.isNaN(parsed) ? track.offsetSec : parsed);
                               (event.target as HTMLInputElement).blur();
                             }

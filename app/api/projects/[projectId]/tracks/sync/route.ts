@@ -36,17 +36,14 @@ export async function POST(request: Request, { params }: { params: { projectId: 
     return NextResponse.json({ error: 'Only owners and editors can modify offsets.' }, { status: 403 });
   }
 
-  for (const entry of parsed.data.offsets) {
-    const { error } = await supabase
-      .from('tracks')
-      .update({ offset_sec: entry.offsetSec })
-      .eq('id', entry.trackId)
-      .eq('project_id', params.projectId);
+  const { data: updatedOffsets, error } = await supabase.rpc('update_project_track_offsets_atomic', {
+    target_project_id: params.projectId,
+    offset_updates: parsed.data.offsets
+  });
 
-    if (error) {
-      return NextResponse.json({ error: error.message ?? 'Failed to save track offsets.' }, { status: 500 });
-    }
+  if (error) {
+    return NextResponse.json({ error: error.message ?? 'Failed to save track offsets.' }, { status: 500 });
   }
 
-  return NextResponse.json({ success: true });
+  return NextResponse.json({ success: true, offsets: updatedOffsets ?? [] });
 }

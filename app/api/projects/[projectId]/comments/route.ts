@@ -44,6 +44,23 @@ export async function POST(request: Request, { params }: { params: { projectId: 
     track_id: parsed.data.trackId ?? null
   };
 
+  if (commentInsert.track_id) {
+    const { data: track, error: trackError } = await supabase
+      .from('tracks')
+      .select('id')
+      .eq('id', commentInsert.track_id)
+      .eq('project_id', params.projectId)
+      .maybeSingle();
+
+    if (trackError) {
+      return NextResponse.json({ error: trackError.message ?? 'Failed to validate track selection.' }, { status: 500 });
+    }
+
+    if (!track) {
+      return NextResponse.json({ error: 'Selected track does not belong to this project.' }, { status: 400 });
+    }
+  }
+
   const { data: comment, error } = await supabase
     .from('comments')
     .insert(commentInsert)
