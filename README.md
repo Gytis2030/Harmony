@@ -1,30 +1,35 @@
 # Harmony V1
 
-Harmony is a browser-based collaborative workspace for remote music production review. V1 focuses on track uploads, timeline comments, version snapshots, and team collaboration.
+Harmony is a browser-based collaboration workspace for remote music production review. V1 is focused on reliability and core review workflows: project management, multi-track playback, comments, offsets, and version snapshots.
 
-## Stack
+## What is fully working in V1
 
-- Next.js 14 (App Router) + TypeScript
-- Tailwind CSS
-- Supabase (Auth + Postgres + Storage)
-- WaveSurfer.js for waveform rendering
-- Zustand for local timeline state
-- Zod + React Hook Form
+- Email/password authentication (`/login`) with protected app routes.
+- Dashboard project creation and search.
+- Project membership and role-based collaboration (owner/editor/viewer).
+- Signed upload flow for audio tracks with concurrency controls.
+- Waveform timeline playback with stop/play/pause behavior and signed URL refresh.
+- Manual per-track offset editing and auto-sync offset persistence.
+- Timeline comments (create + resolve/unresolve) with project/track integrity checks.
+- Version history snapshots and restore-offsets from prior versions.
+- Clear user feedback for critical actions via toast + inline status messaging.
 
-## What is implemented
+## Architecture overview (concise)
 
-- Email/password auth (`/login`)
-- Protected app shell (`/dashboard`, `/projects/[projectId]`)
-- Project creation with automatic initial version snapshot
-- Project membership and role management
-- Stem upload flow with signed URLs and progress
-- Stem offset editing + auto sync
-- Timeline comments with resolve/unresolve
-- Version creation + restore offsets
-- Toast notifications for key user actions
-- Loading / empty / error states for key app routes and waveform loading
-
----
+- **Frontend (Next.js App Router):**
+  - Route groups for marketing and app experiences.
+  - Server components fetch project/session data.
+  - Client components handle interactive waveform playback, uploads, comments, and collaboration controls.
+- **Backend (Next.js route handlers + Supabase):**
+  - API routes in `app/api/**` enforce authentication + role checks.
+  - Supabase Postgres stores projects, tracks, comments, members, and snapshots.
+  - Supabase Storage stores track binaries in a private `tracks` bucket with signed URL access.
+- **Data integrity + permissions:**
+  - Row Level Security and SQL functions/constraints in `supabase/migrations/**`.
+  - Membership checks and offset sync use DB-side RPC for consistency.
+- **State + validation:**
+  - Local timeline UI state via Zustand.
+  - Payload validation with Zod.
 
 ## Local setup
 
@@ -36,100 +41,73 @@ npm install
 
 ### 2) Configure environment
 
-Create `.env.local` in the repo root:
+Create `.env.local`:
 
 ```bash
 NEXT_PUBLIC_SUPABASE_URL=https://<your-project-ref>.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=<your-anon-key>
-SUPABASE_SERVICE_ROLE_KEY=<optional-service-role-key>
 NEXT_PUBLIC_APP_URL=http://localhost:3000
+SUPABASE_SERVICE_ROLE_KEY=<optional-service-role-key>
 ```
 
 Required:
-
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
 
 Optional:
-
-- `SUPABASE_SERVICE_ROLE_KEY`
 - `NEXT_PUBLIC_APP_URL`
+- `SUPABASE_SERVICE_ROLE_KEY` (helpful for privileged server-side operations/debugging)
 
----
+## Manual Supabase setup still required
 
-## Supabase setup
+1. Create a Supabase project.
+2. Enable Email auth provider.
+3. Apply **both** migrations:
+   - `supabase/migrations/001_init.sql`
+   - `supabase/migrations/002_critical_fixes.sql`
+4. Confirm:
+   - private `tracks` storage bucket exists,
+   - table RLS enabled,
+   - triggers/functions/policies from both migrations are present.
 
-### 1) Create project and enable Email auth
-
-- In Supabase Dashboard, create a project.
-- Go to **Authentication → Providers → Email** and enable Email auth.
-
-### 2) Apply SQL migration
-
-Use the migration in `supabase/migrations/001_init.sql`.
-
-#### Option A: Supabase Dashboard SQL editor
-
-1. Open **SQL Editor**.
-2. Paste migration contents from `supabase/migrations/001_init.sql`.
-3. Run it.
-
-#### Option B: Supabase CLI
-
-```bash
-supabase link --project-ref <your-project-ref>
-supabase db push
-```
-
-### 3) Confirm storage bucket and policies
-
-After migration, verify:
-
-- Storage bucket `tracks` exists and is private.
-- Tables exist: `profiles`, `projects`, `project_members`, `project_versions`, `tracks`, `comments`.
-- RLS is enabled for those tables.
-- Trigger `on_auth_user_created` exists.
-- Storage policies for bucket `tracks` exist.
-
-> The migration already creates the `tracks` bucket and storage policies. No manual bucket creation is required unless your environment blocks storage DDL.
-
----
-
-## Run the app
+## Run locally
 
 ```bash
 npm run dev
 ```
 
-Open:
+Then open `http://localhost:3000`.
 
-- App: `http://localhost:3000`
-- Login: `http://localhost:3000/login`
-
-Sign up with email/password, then you should land on `/dashboard`.
-
----
-
-## Testing & checks
+## Quality checks
 
 ```bash
 npm run test
 npm run typecheck
 npm run lint
+npm run build
 ```
 
-## Optional dev helper strategy (not required for production use)
+## Current V1 limitations
 
-If you need demo data quickly, keep helper scripts/SQL external to production migrations (for example a local-only SQL seed file). Harmony does **not** require fake data to run.
+- Real-time collaboration updates are request/refresh based (no live collaborative cursors or presence).
+- Offset auto-sync quality depends on source material quality and overlap.
+- Track playback and timeline are optimized for review, not full DAW-grade editing/mixing.
+- Test suite is currently focused on core utility logic; broader E2E coverage is still limited.
+- Node test runner emits module-type warnings unless package/module settings are adjusted.
 
----
+## Short future roadmap
 
-## Project structure
+- Add broader integration/E2E test coverage for key workflows.
+- Improve observability (structured logs + action-level diagnostics).
+- Expand collaboration UX (activity history and richer role actions).
+- Continue tightening Supabase-generated typing across API/data layers.
 
-- `app/` App Router pages, layouts, API handlers
-- `components/` feature + shared components
-- `lib/` utilities, Supabase clients, validation, audio logic
-- `store/` Zustand state
-- `types/` DB types
-- `supabase/migrations/` schema + policies
-- `tests/` lightweight utility tests
+## Repo structure
+
+- `app/`: routes, layouts, API handlers
+- `components/`: feature and UI components
+- `lib/`: domain logic, Supabase clients, validation, audio sync helpers
+- `store/`: Zustand timeline/session state
+- `types/`: shared TS/database types
+- `supabase/migrations/`: schema, RLS, and function/policy SQL
+- `tests/`: utility tests

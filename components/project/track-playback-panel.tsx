@@ -97,7 +97,6 @@ export function TrackPlaybackPanel({ projectId, permissions, tracks, initialComm
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
   const [mutedTrackIds, setMutedTrackIds] = useState<Record<string, boolean>>({});
   const [soloTrackIds, setSoloTrackIds] = useState<Record<string, boolean>>({});
-  const [runtimeVersion, setRuntimeVersion] = useState(0);
   const [offsetInputs, setOffsetInputs] = useState<Record<string, string>>({});
   const [offsetSaving, setOffsetSaving] = useState<Record<string, boolean>>({});
   const [offsetErrorByTrack, setOffsetErrorByTrack] = useState<Record<string, string | null>>({});
@@ -141,7 +140,7 @@ export function TrackPlaybackPanel({ projectId, permissions, tracks, initialComm
       const fallbackDuration = track.durationSec ?? loadedDuration;
       return Math.max(max, track.offsetSec + fallbackDuration);
     }, 0);
-  }, [runtimeVersion, trackList]);
+  }, [trackList]);
 
   const hasSolo = useMemo(() => Object.values(soloTrackIds).some(Boolean), [soloTrackIds]);
 
@@ -257,7 +256,6 @@ export function TrackPlaybackPanel({ projectId, permissions, tracks, initialComm
 
   const handleTrackReady = useCallback((trackId: string, value: TrackRuntime) => {
     runtimeRef.current[trackId] = value;
-    setRuntimeVersion((count) => count + 1);
   }, []);
 
   const refreshTrackPlaybackUrl = useCallback(
@@ -371,7 +369,7 @@ export function TrackPlaybackPanel({ projectId, permissions, tracks, initialComm
     setCommentText('');
     setIsSavingComment(false);
     notify('Comment added.', 'success');
-  }, [commentText, commentTimestampSec, permissions.canComment, projectId, selectedTrackId]);
+  }, [commentText, commentTimestampSec, notify, permissions.canComment, projectId, selectedTrackId]);
 
   const toggleResolved = useCallback(
     async (commentId: string, nextResolved: boolean) => {
@@ -389,7 +387,7 @@ export function TrackPlaybackPanel({ projectId, permissions, tracks, initialComm
       setComments((prev) => prev.map((comment) => (comment.id === commentId ? { ...comment, resolved: nextResolved } : comment)));
       notify(`Comment marked as ${nextResolved ? 'resolved' : 'unresolved'}.`, 'success');
     },
-    [isEditDisabled, projectId]
+    [notify, projectId]
   );
 
   const handleAutoSync = useCallback(async () => {
@@ -457,7 +455,7 @@ export function TrackPlaybackPanel({ projectId, permissions, tracks, initialComm
     } finally {
       setIsSyncingStems(false);
     }
-  }, [ensurePlaybackUrlsFresh, isEditDisabled, projectId, referenceTrackId, seekTimeline, timelineSec, trackList]);
+  }, [ensurePlaybackUrlsFresh, isEditDisabled, notify, projectId, referenceTrackId, seekTimeline, timelineSec, trackList]);
 
   const persistTrackOffset = useCallback(
     async (trackId: string, nextOffsetSec: number) => {
@@ -487,7 +485,7 @@ export function TrackPlaybackPanel({ projectId, permissions, tracks, initialComm
         setOffsetSaving((prev) => ({ ...prev, [trackId]: false }));
       }
     },
-    [projectId]
+    [isEditDisabled, projectId]
   );
 
   const updateTrackOffset = useCallback(
@@ -559,7 +557,7 @@ export function TrackPlaybackPanel({ projectId, permissions, tracks, initialComm
     } finally {
       setIsSavingVersion(false);
     }
-  }, [isEditDisabled, projectId, versionLabelInput, versionNotesInput]);
+  }, [isEditDisabled, notify, projectId, versionLabelInput, versionNotesInput]);
 
   const restoreOffsetsFromVersion = useCallback(async () => {
     if (isEditDisabled) {
@@ -604,7 +602,7 @@ export function TrackPlaybackPanel({ projectId, permissions, tracks, initialComm
     } finally {
       setIsRestoringOffsets(false);
     }
-  }, [isEditDisabled, projectId, seekTimeline, selectedVersion, timelineSec]);
+  }, [isEditDisabled, notify, projectId, seekTimeline, selectedVersion, timelineSec]);
 
   return (
     <div className="grid gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(320px,1fr)]">
