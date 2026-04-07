@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
+import type WaveSurfer from 'wavesurfer.js';
 import { WaveformPlayer } from '@/components/project/waveform-player';
 import { useToast } from '@/components/ui/toast-provider';
 import { autoSyncStemOffsets, type StemSyncResult } from '@/lib/audio/stem-auto-sync';
@@ -56,8 +57,9 @@ type ProjectVersionItem = {
 };
 
 type TrackRuntime = {
-  audio: HTMLAudioElement;
+  waveSurfer: WaveSurfer;
   durationSec: number;
+  isPlaying: boolean;
 };
 
 function formatTime(seconds: number) {
@@ -151,13 +153,18 @@ export function TrackPlaybackPanel({ projectId, permissions, tracks, initialComm
   const selectedVersion = useMemo(() => versions.find((entry) => entry.id === selectedVersionId) ?? null, [selectedVersionId, versions]);
 
   const stopAllAudio = useCallback(() => {
-    Object.values(runtimeRef.current).forEach(({ audio }) => {
-      audio.pause();
+    console.log('[Playback] stopAllAudio');
+    Object.entries(runtimeRef.current).forEach(([trackId, runtime]) => {
+      console.log(`[Playback] stop track=${trackId}`);
+      runtime.waveSurfer.stop();
+      runtime.waveSurfer.pause();
+      runtime.isPlaying = false;
     });
   }, []);
 
   const syncAudiosToTimeline = useCallback(
     (nextTimelineSec: number, shouldPlay: boolean) => {
+      console.log(`[Playback] sync timeline=${nextTimelineSec.toFixed(3)} shouldPlay=${shouldPlay}`);
       trackList.forEach((track) => {
         const runtime = runtimeRef.current[track.id];
         if (!runtime) return;
@@ -166,20 +173,35 @@ export function TrackPlaybackPanel({ projectId, permissions, tracks, initialComm
         const isSoloed = !!soloTrackIds[track.id];
         const shouldBeAudible = hasSolo ? isSoloed : !isMuted;
 
-        runtime.audio.muted = !shouldBeAudible;
+        runtime.waveSurfer.setMuted(!shouldBeAudible);
+        runtime.waveSurfer.setPlaybackRate(1);
 
         const localTime = nextTimelineSec - track.offsetSec;
         const clampedLocalTime = Math.max(0, Math.min(localTime, runtime.durationSec || 0));
-        runtime.audio.currentTime = clampedLocalTime;
 
         const inTrackWindow = localTime >= 0 && localTime < runtime.durationSec;
 
-        if (shouldPlay && inTrackWindow && shouldBeAudible) {
-          void runtime.audio.play().catch(() => {
-            // ignore autoplay interruptions in non-interactive situations
-          });
-        } else {
-          runtime.audio.pause();
+        const shouldTrackPlay = shouldPlay && inTrackWindow && shouldBeAudible;
+        const currentTime = runtime.waveSurfer.getCurrentTime();
+        const driftSec = Math.abs(currentTime - clampedLocalTime);
+        const shouldSeek = !runtime.isPlaying || !shouldTrackPlay || driftSec > 0.05;
+
+        if (shouldSeek) {
+          runtime.waveSurfer.setTime(clampedLocalTime);
+        }
+
+        if (shouldTrackPlay) {
+          if (!runtime.isPlaying) {
+            console.log(`[Playback] play track=${track.id} time=${clampedLocalTime.toFixed(3)}`);
+            void runtime.waveSurfer.play().catch(() => {
+              // ignore autoplay interruptions in non-interactive situations
+            });
+            runtime.isPlaying = true;
+          }
+        } else if (runtime.isPlaying) {
+          console.log(`[Playback] pause track=${track.id} time=${clampedLocalTime.toFixed(3)}`);
+          runtime.waveSurfer.pause();
+          runtime.isPlaying = false;
         }
       });
     },
@@ -210,6 +232,7 @@ export function TrackPlaybackPanel({ projectId, permissions, tracks, initialComm
 
   useEffect(() => {
     if (!isPlaying) {
+      console.log('[Playback] global pause');
       stopAllAudio();
       if (rafRef.current) {
         cancelAnimationFrame(rafRef.current);
@@ -219,6 +242,7 @@ export function TrackPlaybackPanel({ projectId, permissions, tracks, initialComm
       return;
     }
 
+    console.log('[Playback] global play');
     timelineAtStartRef.current = timelineSec;
     startClockRef.current = performance.now();
 
@@ -254,8 +278,8 @@ export function TrackPlaybackPanel({ projectId, permissions, tracks, initialComm
     };
   }, [stopAllAudio]);
 
-  const handleTrackReady = useCallback((trackId: string, value: TrackRuntime) => {
-    runtimeRef.current[trackId] = value;
+  const handleTrackReady = useCallback((trackId: string, value: Omit<TrackRuntime, 'isPlaying'>) => {
+    runtimeRef.current[trackId] = { ...value, isPlaying: false };
   }, []);
 
   const refreshTrackPlaybackUrl = useCallback(
