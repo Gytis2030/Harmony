@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import { WaveformPlayer } from '@/components/project/waveform-player';
+import { autoSyncStemOffsets, type StemSyncResult } from '@/lib/audio/stem-auto-sync';
 import { useTimelineStore } from '@/store/timeline-store';
 
 type PlaybackTrack = {
@@ -66,6 +67,11 @@ export function TrackPlaybackPanel({ projectId, tracks, initialComments }: Track
 
   const [timelineSec, setTimelineSec] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [trackList, setTrackList] = useState(tracks);
+  const [referenceTrackId, setReferenceTrackId] = useState(tracks[0]?.id ?? '');
+  const [isSyncingStems, setIsSyncingStems] = useState(false);
+  const [syncResults, setSyncResults] = useState<StemSyncResult[]>([]);
+  const [syncMessage, setSyncMessage] = useState<string | null>(null);
   const [mutedTrackIds, setMutedTrackIds] = useState<Record<string, boolean>>({});
   const [soloTrackIds, setSoloTrackIds] = useState<Record<string, boolean>>({});
   const [runtimeVersion, setRuntimeVersion] = useState(0);
@@ -75,15 +81,20 @@ export function TrackPlaybackPanel({ projectId, tracks, initialComments }: Track
   const [isSavingComment, setIsSavingComment] = useState(false);
   const [commentError, setCommentError] = useState<string | null>(null);
 
-  const trackNameById = useMemo(() => new Map(tracks.map((track) => [track.id, track.name])), [tracks]);
+  useEffect(() => {
+    setTrackList(tracks);
+    setReferenceTrackId((prev) => (tracks.some((track) => track.id === prev) ? prev : tracks[0]?.id || ''));
+  }, [tracks]);
+
+  const trackNameById = useMemo(() => new Map(trackList.map((track) => [track.id, track.name])), [trackList]);
 
   const projectDurationSec = useMemo(() => {
-    return tracks.reduce((max, track) => {
+    return trackList.reduce((max, track) => {
       const loadedDuration = runtimeRef.current[track.id]?.durationSec ?? 0;
       const fallbackDuration = track.durationSec ?? loadedDuration;
       return Math.max(max, track.offsetSec + fallbackDuration);
     }, 0);
-  }, [runtimeVersion, tracks]);
+  }, [runtimeVersion, trackList]);
 
   const hasSolo = useMemo(() => Object.values(soloTrackIds).some(Boolean), [soloTrackIds]);
 
@@ -99,7 +110,7 @@ export function TrackPlaybackPanel({ projectId, tracks, initialComments }: Track
 
   const syncAudiosToTimeline = useCallback(
     (nextTimelineSec: number, shouldPlay: boolean) => {
-      tracks.forEach((track) => {
+      trackList.forEach((track) => {
         const runtime = runtimeRef.current[track.id];
         if (!runtime) return;
 
@@ -124,7 +135,7 @@ export function TrackPlaybackPanel({ projectId, tracks, initialComments }: Track
         }
       });
     },
-    [hasSolo, mutedTrackIds, soloTrackIds, tracks]
+    [hasSolo, mutedTrackIds, soloTrackIds, trackList]
   );
 
   const seekTimeline = useCallback(
@@ -281,6 +292,56 @@ export function TrackPlaybackPanel({ projectId, tracks, initialComments }: Track
     [projectId]
   );
 
+  const handleAutoSync = useCallback(async () => {
+    if (trackList.length === 0) {
+      setSyncMessage('No tracks available to sync.');
+      return;
+    }
+
+    const chosenReferenceId = referenceTrackId || trackList[0]?.id;
+    if (!chosenReferenceId) return;
+
+    setIsSyncingStems(true);
+    setSyncMessage(null);
+    setSyncResults([]);
+
+    try {
+      const results = await autoSyncStemOffsets(
+        trackList.map((track) => ({ id: track.id, name: track.name, signedUrl: track.signedUrl })),
+        chosenReferenceId
+      );
+
+      const response = await fetch(`/api/projects/${projectId}/tracks/sync`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          offsets: results.map((result) => ({
+            trackId: result.trackId,
+            offsetSec: result.offsetSec
+          }))
+        })
+      });
+
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.error ?? 'Failed to save synced offsets.');
+      }
+
+      const nextOffsets = new Map(results.map((result) => [result.trackId, result.offsetSec]));
+      setTrackList((prev) => prev.map((track) => ({ ...track, offsetSec: nextOffsets.get(track.id) ?? track.offsetSec })));
+      setSyncResults(results);
+      seekTimeline(timelineSec);
+
+      const alignedCount = results.filter((entry) => entry.status === 'aligned').length;
+      const fallbackCount = results.filter((entry) => entry.status !== 'aligned' && entry.status !== 'reference').length;
+      setSyncMessage(`Auto sync complete. ${alignedCount} aligned, ${fallbackCount} fallback to 0s.`);
+    } catch (error) {
+      setSyncMessage(error instanceof Error ? error.message : 'Auto sync failed.');
+    } finally {
+      setIsSyncingStems(false);
+    }
+  }, [projectId, referenceTrackId, seekTimeline, timelineSec, trackList]);
+
   return (
     <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">
       <div className="card p-4">
@@ -308,6 +369,33 @@ export function TrackPlaybackPanel({ projectId, tracks, initialComments }: Track
               {formatTime(timelineSec)} / {formatTime(projectDurationSec)}
             </p>
           </div>
+          <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
+            <label className="text-xs font-medium text-muted">Reference track</label>
+            <select
+              className="rounded border border-border bg-background px-2 py-1 text-sm"
+              value={referenceTrackId}
+              onChange={(event) => setReferenceTrackId(event.target.value)}
+            >
+              {trackList.map((track) => (
+                <option key={`reference-${track.id}`} value={track.id}>
+                  {track.name}
+                </option>
+              ))}
+            </select>
+            <button className="rounded border border-border px-3 py-1 text-sm" onClick={handleAutoSync} disabled={isSyncingStems}>
+              {isSyncingStems ? 'Syncing…' : 'Auto Sync Stems'}
+            </button>
+          </div>
+          {syncMessage ? <p className="mt-2 text-xs text-muted">{syncMessage}</p> : null}
+          {syncResults.length > 0 ? (
+            <ul className="mt-2 space-y-1 text-xs text-muted">
+              {syncResults.map((result) => (
+                <li key={`sync-result-${result.trackId}`}>
+                  {trackNameById.get(result.trackId) ?? 'Track'}: {result.status} ({result.confidence.toFixed(2)}) — {result.detail}
+                </li>
+              ))}
+            </ul>
+          ) : null}
           <div className="relative mt-3" onClick={(event) => handleTimelineClick(event, Math.max(projectDurationSec, 0.001))}>
             <input
               className="w-full"
@@ -336,10 +424,10 @@ export function TrackPlaybackPanel({ projectId, tracks, initialComments }: Track
         </div>
 
         <div className="mt-4 space-y-3">
-          {tracks.length === 0 ? (
+          {trackList.length === 0 ? (
             <p className="text-sm text-muted">No tracks uploaded yet.</p>
           ) : (
-            tracks.map((track) => {
+            trackList.map((track) => {
               const runtimeDuration = runtimeRef.current[track.id]?.durationSec ?? track.durationSec ?? 0;
               const leftPct = projectDurationSec > 0 ? (track.offsetSec / projectDurationSec) * 100 : 0;
               const widthPct = projectDurationSec > 0 ? (runtimeDuration / projectDurationSec) * 100 : 100;
@@ -423,7 +511,7 @@ export function TrackPlaybackPanel({ projectId, tracks, initialComments }: Track
             className="w-full rounded border border-border bg-background px-2 py-1 text-sm"
           >
             <option value="">General project comment</option>
-            {tracks.map((track) => (
+            {trackList.map((track) => (
               <option key={track.id} value={track.id}>
                 {track.name}
               </option>
