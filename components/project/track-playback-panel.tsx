@@ -72,7 +72,11 @@ function formatTime(seconds: number) {
 }
 
 function formatDate(value: string) {
-  return new Date(value).toLocaleString();
+  return new Intl.DateTimeFormat('en-US', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+    timeZone: 'UTC'
+  }).format(new Date(value));
 }
 
 export function TrackPlaybackPanel({ projectId, permissions, tracks, initialComments, initialVersions }: TrackPlaybackPanelProps) {
@@ -87,6 +91,7 @@ export function TrackPlaybackPanel({ projectId, permissions, tracks, initialComm
   const clearPendingSeek = useTimelineStore((state) => state.clearPendingSeek);
   const runtimeRef = useRef<Record<string, TrackRuntime>>({});
   const rafRef = useRef<number | null>(null);
+  const driftCheckRafRef = useRef<number | null>(null);
   const startClockRef = useRef<number | null>(null);
   const timelineAtStartRef = useRef(0);
 
@@ -114,6 +119,7 @@ export function TrackPlaybackPanel({ projectId, permissions, tracks, initialComm
   const [commentTimestampSec, setCommentTimestampSec] = useState(0);
   const [isSavingComment, setIsSavingComment] = useState(false);
   const [commentError, setCommentError] = useState<string | null>(null);
+  const [hasHydrated, setHasHydrated] = useState(false);
   const isPlayingRef = useRef(false);
 
   const isEditDisabled = !permissions.canEdit;
@@ -121,6 +127,10 @@ export function TrackPlaybackPanel({ projectId, permissions, tracks, initialComm
   useEffect(() => {
     isPlayingRef.current = isPlaying;
   }, [isPlaying]);
+
+  useEffect(() => {
+    setHasHydrated(true);
+  }, []);
 
   useEffect(() => {
     setTrackList(tracks);
@@ -162,6 +172,23 @@ export function TrackPlaybackPanel({ projectId, permissions, tracks, initialComm
     });
   }, []);
 
+  const monitorPlaybackDrift = useCallback((timelineValueSec: number) => {
+    trackList.forEach((track) => {
+      const runtime = runtimeRef.current[track.id];
+      if (!runtime || !runtime.isPlaying) return;
+      const localExpected = timelineValueSec - track.offsetSec;
+      if (localExpected < 0 || localExpected >= runtime.durationSec) return;
+
+      const currentTime = runtime.waveSurfer.getCurrentTime();
+      const driftSec = Math.abs(currentTime - localExpected);
+      console.log(`[Playback] drift track=${track.id} drift=${driftSec.toFixed(3)}s`);
+      if (driftSec > 0.1) {
+        console.log(`[Playback] seek correction track=${track.id} expected=${localExpected.toFixed(3)} current=${currentTime.toFixed(3)}`);
+        runtime.waveSurfer.setTime(localExpected);
+      }
+    });
+  }, [trackList]);
+
   const syncAudiosToTimeline = useCallback(
     (nextTimelineSec: number, shouldPlay: boolean) => {
       console.log(`[Playback] sync timeline=${nextTimelineSec.toFixed(3)} shouldPlay=${shouldPlay}`);
@@ -184,9 +211,10 @@ export function TrackPlaybackPanel({ projectId, permissions, tracks, initialComm
         const shouldTrackPlay = shouldPlay && inTrackWindow && shouldBeAudible;
         const currentTime = runtime.waveSurfer.getCurrentTime();
         const driftSec = Math.abs(currentTime - clampedLocalTime);
-        const shouldSeek = !runtime.isPlaying || !shouldTrackPlay || driftSec > 0.05;
+        const shouldSeek = !runtime.isPlaying || !shouldTrackPlay || driftSec > 0.1;
 
         if (shouldSeek) {
+          console.log(`[Playback] seek track=${track.id} time=${clampedLocalTime.toFixed(3)} drift=${driftSec.toFixed(3)}`);
           runtime.waveSurfer.setTime(clampedLocalTime);
         }
 
@@ -209,11 +237,13 @@ export function TrackPlaybackPanel({ projectId, permissions, tracks, initialComm
   );
 
   const seekTimeline = useCallback(
-    (nextTimelineSec: number, shouldPlayOverride?: boolean) => {
+    (nextTimelineSec: number, shouldPlayOverride?: boolean, shouldSyncAudio = true) => {
       const bounded = Math.max(0, Math.min(nextTimelineSec, projectDurationSec || 0));
       setTimelineSec(bounded);
       setCursorMs(Math.floor(bounded * 1000));
-      syncAudiosToTimeline(bounded, shouldPlayOverride ?? isPlayingRef.current);
+      if (shouldSyncAudio) {
+        syncAudiosToTimeline(bounded, shouldPlayOverride ?? isPlayingRef.current);
+      }
     },
     [projectDurationSec, setCursorMs, syncAudiosToTimeline]
   );
@@ -238,6 +268,10 @@ export function TrackPlaybackPanel({ projectId, permissions, tracks, initialComm
         cancelAnimationFrame(rafRef.current);
         rafRef.current = null;
       }
+      if (driftCheckRafRef.current) {
+        cancelAnimationFrame(driftCheckRafRef.current);
+        driftCheckRafRef.current = null;
+      }
       startClockRef.current = null;
       return;
     }
@@ -257,20 +291,33 @@ export function TrackPlaybackPanel({ projectId, permissions, tracks, initialComm
         return;
       }
 
-      seekTimeline(next);
+      seekTimeline(next, true, false);
       rafRef.current = requestAnimationFrame(tick);
+    };
+
+    const checkDrift = () => {
+      if (startClockRef.current == null) return;
+      const elapsed = (performance.now() - startClockRef.current) / 1000;
+      const currentTimeline = timelineAtStartRef.current + elapsed;
+      monitorPlaybackDrift(currentTimeline);
+      driftCheckRafRef.current = requestAnimationFrame(checkDrift);
     };
 
     syncAudiosToTimeline(timelineSec, true);
     rafRef.current = requestAnimationFrame(tick);
+    driftCheckRafRef.current = requestAnimationFrame(checkDrift);
 
     return () => {
       if (rafRef.current) {
         cancelAnimationFrame(rafRef.current);
         rafRef.current = null;
       }
+      if (driftCheckRafRef.current) {
+        cancelAnimationFrame(driftCheckRafRef.current);
+        driftCheckRafRef.current = null;
+      }
     };
-  }, [isPlaying, projectDurationSec, seekTimeline, stopAllAudio, syncAudiosToTimeline, timelineSec]);
+  }, [isPlaying, monitorPlaybackDrift, projectDurationSec, seekTimeline, stopAllAudio, syncAudiosToTimeline, timelineSec]);
 
   useEffect(() => {
     return () => {
@@ -899,7 +946,7 @@ export function TrackPlaybackPanel({ projectId, permissions, tracks, initialComm
                   >
                     <p className="font-medium">{version.label}</p>
                     <p className="text-xs text-muted">{version.creatorName}</p>
-                    <p className="text-xs text-muted">{formatDate(version.createdAt)}</p>
+                    <p className="text-xs text-muted">{hasHydrated ? formatDate(version.createdAt) : '—'}</p>
                     {version.notes ? <p className="mt-1 text-xs text-muted">{version.notes}</p> : null}
                   </button>
                 </li>
@@ -981,7 +1028,7 @@ export function TrackPlaybackPanel({ projectId, permissions, tracks, initialComm
                   </div>
                   <p className="text-xs text-muted">{comment.trackId ? trackNameById.get(comment.trackId) ?? 'Unknown track' : 'All tracks'}</p>
                   <p className="mt-1">{comment.body}</p>
-                  <p className="mt-1 text-xs text-muted">Created {formatDate(comment.createdAt)}</p>
+                  <p className="mt-1 text-xs text-muted">Created {hasHydrated ? formatDate(comment.createdAt) : '—'}</p>
                 </button>
                 <button
                   className="mt-2 rounded border border-border px-2 py-1 text-xs"
