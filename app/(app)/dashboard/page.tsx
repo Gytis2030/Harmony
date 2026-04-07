@@ -71,9 +71,10 @@ function formatCreatedDate(value: string) {
 export default async function DashboardPage({
   searchParams
 }: {
-  searchParams?: { search?: string };
+  searchParams?: { search?: string | string[] };
 }) {
-  const searchValue = searchParams?.search ?? '';
+  const rawSearch = searchParams?.search;
+  const searchValue = typeof rawSearch === 'string' ? rawSearch : Array.isArray(rawSearch) ? rawSearch[0] ?? '' : '';
   const projects = await getProjects(searchValue);
 
   return (

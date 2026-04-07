@@ -36,9 +36,16 @@ export async function POST(request: Request, { params }: { params: { projectId: 
   }
 
   const normalizedEmail = parsed.data.email.trim().toLowerCase();
-  const { data: profile } = await supabase.from('profiles').select('id, email').eq('email', normalizedEmail).maybeSingle();
+  const { data: profileMatches, error: profileLookupError } = await supabase.rpc('find_profile_by_email_for_project', {
+    target_project_id: params.projectId,
+    target_email: normalizedEmail
+  });
 
-  const profileRow = profile as { id: string; email: string } | null;
+  if (profileLookupError) {
+    return NextResponse.json({ error: profileLookupError.message ?? 'Failed to resolve invite email.' }, { status: 500 });
+  }
+
+  const profileRow = (profileMatches?.[0] as { id: string; email: string } | undefined) ?? null;
 
   if (!profileRow) {
     return NextResponse.json({ error: 'That email is not connected to an account yet. Ask them to create an account first.' }, { status: 404 });
@@ -55,18 +62,31 @@ export async function POST(request: Request, { params }: { params: { projectId: 
     return NextResponse.json({ error: 'That user is already a project member.' }, { status: 409 });
   }
 
-  const { data: member, error } = await supabase
+  const { error } = await supabase
     .from('project_members')
     .insert({
       project_id: params.projectId,
       user_id: profileRow.id,
       role: parsed.data.role
     })
-    .select('user_id, role, created_at, profiles:user_id(full_name, email)')
+    .select('user_id')
     .single();
 
-  if (error || !member) {
+  if (error) {
     return NextResponse.json({ error: error?.message ?? 'Failed to add member.' }, { status: 500 });
+  }
+
+  const { data: memberRows, error: memberLookupError } = await supabase.rpc('list_project_members_with_profiles', {
+    target_project_id: params.projectId
+  });
+
+  if (memberLookupError) {
+    return NextResponse.json({ error: memberLookupError.message ?? 'Member added, but failed to load member profile.' }, { status: 500 });
+  }
+
+  const member = memberRows?.find((entry: { user_id: string }) => entry.user_id === profileRow.id);
+  if (!member) {
+    return NextResponse.json({ error: 'Member added, but failed to load member profile.' }, { status: 500 });
   }
 
   return NextResponse.json({ member });

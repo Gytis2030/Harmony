@@ -130,7 +130,13 @@ export function buildProjectVersionSnapshotFromRows(rows: SnapshotRows): Project
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function buildProjectVersionSnapshot(client: any, projectId: string): Promise<ProjectVersionSnapshotV1> {
-  const [{ data: project, error: projectError }, { data: tracks, error: tracksError }, { data: comments, error: commentsError }] = await Promise.all([
+  const [
+    { data: project, error: projectError },
+    { data: tracks, error: tracksError },
+    { data: recentComments, error: recentCommentsError },
+    { count: totalCommentCount, error: totalCommentCountError },
+    { count: unresolvedCommentCount, error: unresolvedCommentCountError }
+  ] = await Promise.all([
     client.from('projects').select('id, name, description, bpm, key_signature, updated_at').eq('id', projectId).single(),
     client
       .from('tracks')
@@ -142,7 +148,9 @@ export async function buildProjectVersionSnapshot(client: any, projectId: string
       .select('id, track_id, author_id, timestamp_sec, body, resolved, created_at')
       .eq('project_id', projectId)
       .order('created_at', { ascending: false })
-      .limit(50)
+      .limit(50),
+    client.from('comments').select('*', { count: 'exact', head: true }).eq('project_id', projectId),
+    client.from('comments').select('*', { count: 'exact', head: true }).eq('project_id', projectId).eq('resolved', false)
   ]);
 
   if (projectError || !project) {
@@ -151,15 +159,24 @@ export async function buildProjectVersionSnapshot(client: any, projectId: string
   if (tracksError) {
     throw new Error(tracksError.message ?? 'Failed to load tracks for version snapshot.');
   }
-  if (commentsError) {
-    throw new Error(commentsError.message ?? 'Failed to load comments for version snapshot.');
+  if (recentCommentsError || totalCommentCountError || unresolvedCommentCountError) {
+    throw new Error(recentCommentsError?.message ?? totalCommentCountError?.message ?? unresolvedCommentCountError?.message ?? 'Failed to load comments for version snapshot.');
   }
 
-  return buildProjectVersionSnapshotFromRows({
+  const snapshot = buildProjectVersionSnapshotFromRows({
     project,
     tracks: tracks ?? [],
-    comments: comments ?? []
+    comments: recentComments ?? []
   });
+
+  return {
+    ...snapshot,
+    comments: {
+      ...snapshot.comments,
+      total: totalCommentCount ?? 0,
+      unresolved: unresolvedCommentCount ?? 0
+    }
+  };
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

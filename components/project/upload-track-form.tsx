@@ -37,11 +37,10 @@ function isSupportedFile(file: File) {
 }
 
 async function extractAudioMetadata(file: File): Promise<AudioMetadata> {
+  const audioContext = new AudioContext();
   try {
-    const audioContext = new AudioContext();
     const fileBuffer = await file.arrayBuffer();
     const decoded = await audioContext.decodeAudioData(fileBuffer.slice(0));
-    await audioContext.close();
 
     return {
       durationSec: Number.isFinite(decoded.duration) ? Number(decoded.duration.toFixed(3)) : null,
@@ -54,7 +53,27 @@ async function extractAudioMetadata(file: File): Promise<AudioMetadata> {
       sampleRate: null,
       channelCount: null
     };
+  } finally {
+    await audioContext.close().catch(() => undefined);
   }
+}
+
+async function mapWithConcurrency<T, R>(items: T[], limit: number, mapper: (item: T, index: number) => Promise<R>): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let cursor = 0;
+
+  async function worker() {
+    while (true) {
+      const index = cursor;
+      cursor += 1;
+      if (index >= items.length) return;
+      results[index] = await mapper(items[index], index);
+    }
+  }
+
+  const workers = Array.from({ length: Math.min(limit, items.length) }, () => worker());
+  await Promise.all(workers);
+  return results;
 }
 
 function uploadFileWithProgress(signedUrl: string, file: File, onProgress: (progress: number) => void) {
@@ -111,8 +130,10 @@ export function UploadTrackForm({ projectId, canUpload }: UploadTrackFormProps) 
 
     setUploads((current) => [...nextUploads, ...current]);
 
-    const uploadResults = await Promise.all(
-      selectedFiles.map(async (file, index) => {
+    const uploadResults = await mapWithConcurrency(
+      selectedFiles,
+      3,
+      async (file, index) => {
         const itemId = nextUploads[index].id;
 
         if (!isSupportedFile(file)) {
@@ -177,7 +198,7 @@ export function UploadTrackForm({ projectId, canUpload }: UploadTrackFormProps) 
           }));
           return false;
         }
-      })
+      }
     );
 
     const successfulUploads = uploadResults.filter(Boolean).length;

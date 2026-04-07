@@ -8,6 +8,7 @@ import type { Json, Track } from '@/types/database';
 
 type ProjectTrack = Track & {
   signedUrl?: string;
+  signedUrlExpiresAtMs?: number;
 };
 
 type CommentRecord = {
@@ -29,10 +30,8 @@ type ProjectMemberRecord = {
   user_id: string;
   role: ProjectRole;
   created_at: string;
-  profiles: {
-    full_name: string | null;
-    email: string | null;
-  } | null;
+  full_name: string | null;
+  email: string | null;
 };
 
 type ProjectVersionRecord = {
@@ -64,11 +63,9 @@ async function getProjectData(projectId: string) {
       .eq('project_id', projectId)
       .order('created_at', { ascending: false })
       .limit(100),
-    supabase
-      .from('project_members')
-      .select('user_id, role, created_at, profiles:user_id(full_name, email)')
-      .eq('project_id', projectId)
-      .order('created_at', { ascending: true })
+    supabase.rpc('list_project_members_with_profiles', {
+      target_project_id: projectId
+    })
   ]);
 
   if (tracksError || commentsError || versionsError || membersError) {
@@ -84,11 +81,17 @@ async function getProjectData(projectId: string) {
 }
 
 async function getSignedTrackUrl(path: string | undefined) {
-  if (!path) return undefined;
+  if (!path) return null;
 
   const supabase = createClient();
-  const { data } = await supabase.storage.from('tracks').createSignedUrl(path, 60 * 5);
-  return data?.signedUrl;
+  const expiresInSec = 60 * 5;
+  const { data } = await supabase.storage.from('tracks').createSignedUrl(path, expiresInSec);
+  if (!data?.signedUrl) return null;
+
+  return {
+    signedUrl: data.signedUrl,
+    signedUrlExpiresAtMs: Date.now() + expiresInSec * 1000
+  };
 }
 
 export default async function ProjectPage({ params }: { params: { projectId: string } }) {
@@ -112,7 +115,7 @@ export default async function ProjectPage({ params }: { params: { projectId: str
   const tracksWithUrls: ProjectTrack[] = await Promise.all(
     tracks.map(async (track) => ({
       ...track,
-      signedUrl: await getSignedTrackUrl(track.file_path)
+      ...(await getSignedTrackUrl(track.file_path))
     }))
   );
 
@@ -133,8 +136,8 @@ export default async function ProjectPage({ params }: { params: { projectId: str
           userId: member.user_id,
           role: member.role,
           createdAt: member.created_at,
-          fullName: member.profiles?.full_name ?? null,
-          email: member.profiles?.email ?? null
+          fullName: member.full_name ?? null,
+          email: member.email ?? null
         }))}
       />
 
@@ -154,7 +157,8 @@ export default async function ProjectPage({ params }: { params: { projectId: str
           sampleRate: track.sample_rate,
           channelCount: track.channel_count,
           offsetSec: track.offset_sec,
-          signedUrl: track.signedUrl
+          signedUrl: track.signedUrl,
+          signedUrlExpiresAtMs: track.signedUrlExpiresAtMs
         }))}
         initialComments={comments.map((comment) => ({
           id: comment.id,

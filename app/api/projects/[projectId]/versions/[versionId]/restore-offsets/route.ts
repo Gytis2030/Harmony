@@ -45,17 +45,14 @@ export async function POST(_: Request, { params }: { params: { projectId: string
     offsetSec: track.offsetSec
   }));
 
-  for (const offset of offsets) {
-    const { error } = await supabase
-      .from('tracks')
-      .update({ offset_sec: offset.offsetSec })
-      .eq('project_id', params.projectId)
-      .eq('id', offset.id);
+  const { data: updatedOffsets, error: updateError } = await supabase.rpc('update_project_track_offsets_atomic', {
+    target_project_id: params.projectId,
+    offset_updates: offsets.map((offset) => ({ trackId: offset.id, offsetSec: offset.offsetSec }))
+  });
 
-    if (error) {
-      return NextResponse.json({ error: error.message ?? 'Failed to restore offsets.' }, { status: 500 });
-    }
+  if (updateError) {
+    return NextResponse.json({ error: updateError.message ?? 'Failed to restore offsets.' }, { status: 500 });
   }
 
-  return NextResponse.json({ restoredOffsets: offsets });
+  return NextResponse.json({ restoredOffsets: updatedOffsets ?? [] });
 }

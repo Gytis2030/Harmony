@@ -62,7 +62,8 @@ export function ProjectMembersPanel({ projectId, currentUserRole, members }: Pro
         user_id: string;
         role: ProjectRole;
         created_at: string;
-        profiles?: { full_name: string | null; email: string | null } | null;
+        full_name?: string | null;
+        email?: string | null;
       };
 
       setMemberList((prev) => [
@@ -71,8 +72,8 @@ export function ProjectMembersPanel({ projectId, currentUserRole, members }: Pro
           userId: member.user_id,
           role: member.role,
           createdAt: member.created_at,
-          fullName: member.profiles?.full_name ?? null,
-          email: member.profiles?.email ?? null
+          fullName: member.full_name ?? null,
+          email: member.email ?? null
         }
       ]);
       setInviteEmail('');
