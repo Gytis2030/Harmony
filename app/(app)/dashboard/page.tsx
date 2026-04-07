@@ -23,7 +23,11 @@ async function getProjects(searchTerm?: string): Promise<DashboardProject[]> {
 
   const { data: projectRows, error } = await query;
 
-  if (error || !projectRows || projectRows.length === 0) {
+  if (error) {
+    throw new Error(error.message || 'Failed to load projects.');
+  }
+
+  if (!projectRows || projectRows.length === 0) {
     return [];
   }
 

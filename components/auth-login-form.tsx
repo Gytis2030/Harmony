@@ -3,12 +3,14 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
+import { useToast } from '@/components/ui/toast-provider';
 import { createClient } from '@/lib/supabase/client';
 import { type LoginSchema, loginSchema, type SignupSchema, signupSchema } from '@/lib/validation/auth';
 
 export function AuthLoginForm() {
   const [mode, setMode] = useState<'login' | 'signup'>('login');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const { notify } = useToast();
 
   const {
     register,
@@ -36,15 +38,19 @@ export function AuthLoginForm() {
 
       if (error) {
         setErrorMessage(error.message);
+        notify(error.message, 'error');
         return;
       }
+      notify('Account created. Check your email if confirmation is enabled.', 'success');
     } else {
       const loginValues = values as LoginSchema;
       const { error } = await supabase.auth.signInWithPassword(loginValues);
       if (error) {
         setErrorMessage(error.message);
+        notify(error.message, 'error');
         return;
       }
+      notify('Signed in successfully.', 'success');
     }
 
     window.location.href = '/dashboard';

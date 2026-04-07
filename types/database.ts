@@ -22,6 +22,7 @@ export type Database = {
           full_name?: string | null;
           created_at?: string;
         };
+        Relationships: [];
       };
       projects: {
         Row: {
@@ -54,6 +55,7 @@ export type Database = {
           created_at?: string;
           updated_at?: string;
         };
+        Relationships: [];
       };
       project_members: {
         Row: {
@@ -77,6 +79,7 @@ export type Database = {
           role?: 'owner' | 'editor' | 'viewer';
           created_at?: string;
         };
+        Relationships: [];
       };
       project_versions: {
         Row: {
@@ -106,6 +109,7 @@ export type Database = {
           snapshot_json?: Json;
           created_at?: string;
         };
+        Relationships: [];
       };
       tracks: {
         Row: {
@@ -156,6 +160,7 @@ export type Database = {
           waveform_peaks?: Json | null;
           created_at?: string;
         };
+        Relationships: [];
       };
       comments: {
         Row: {
@@ -188,6 +193,7 @@ export type Database = {
           resolved?: boolean;
           created_at?: string;
         };
+        Relationships: [];
       };
     };
     Views: Record<string, never>;

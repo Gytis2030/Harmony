@@ -50,7 +50,7 @@ type ProjectVersionRecord = {
 
 async function getProjectData(projectId: string) {
   const supabase = createClient();
-  const [{ data: tracks }, { data: comments }, { data: versions }, { data: members }] = await Promise.all([
+  const [{ data: tracks, error: tracksError }, { data: comments, error: commentsError }, { data: versions, error: versionsError }, { data: members, error: membersError }] = await Promise.all([
     supabase.from('tracks').select('*').eq('project_id', projectId).order('created_at', { ascending: true }),
     supabase
       .from('comments')
@@ -70,6 +70,10 @@ async function getProjectData(projectId: string) {
       .eq('project_id', projectId)
       .order('created_at', { ascending: true })
   ]);
+
+  if (tracksError || commentsError || versionsError || membersError) {
+    throw new Error(tracksError?.message || commentsError?.message || versionsError?.message || membersError?.message || 'Failed to load project data.');
+  }
 
   return {
     tracks: (tracks ?? []) as Track[],
