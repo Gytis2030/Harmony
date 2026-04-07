@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useToast } from '@/components/ui/toast-provider';
 import type { ProjectRole } from '@/lib/project-members';
 
 type ProjectMember = {
@@ -22,6 +23,7 @@ function formatDate(value: string) {
 }
 
 export function ProjectMembersPanel({ projectId, currentUserRole, members }: ProjectMembersPanelProps) {
+  const { notify } = useToast();
   const [memberList, setMemberList] = useState(members);
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState<'editor' | 'viewer'>('viewer');
@@ -34,6 +36,7 @@ export function ProjectMembersPanel({ projectId, currentUserRole, members }: Pro
   const handleInvite = async () => {
     if (!inviteEmail.trim()) {
       setInviteMessage('Enter an email to invite.');
+      notify('Enter an email to invite.', 'error');
       return;
     }
 
@@ -49,7 +52,9 @@ export function ProjectMembersPanel({ projectId, currentUserRole, members }: Pro
 
       const payload = await response.json();
       if (!response.ok) {
-        setInviteMessage(payload.error ?? 'Unable to invite member.');
+        const message = payload.error ?? 'Unable to invite member.';
+        setInviteMessage(message);
+        notify(message, 'error');
         return;
       }
 
@@ -73,6 +78,7 @@ export function ProjectMembersPanel({ projectId, currentUserRole, members }: Pro
       setInviteEmail('');
       setInviteRole('viewer');
       setInviteMessage('Member added to the project.');
+      notify('Member added to the project.', 'success');
     } finally {
       setInviteBusy(false);
     }
@@ -90,11 +96,14 @@ export function ProjectMembersPanel({ projectId, currentUserRole, members }: Pro
       const payload = await response.json();
 
       if (!response.ok) {
-        setInviteMessage(payload.error ?? 'Failed to update role.');
+        const message = payload.error ?? 'Failed to update role.';
+        setInviteMessage(message);
+        notify(message, 'error');
         return;
       }
 
       setMemberList((prev) => prev.map((member) => (member.userId === memberUserId ? { ...member, role } : member)));
+      notify('Member role updated.', 'success');
     } finally {
       setRoleSavingUserId(null);
     }
@@ -106,6 +115,9 @@ export function ProjectMembersPanel({ projectId, currentUserRole, members }: Pro
       <p className="mt-1 text-xs text-muted">Owners and editors can make changes. Viewers can listen and review.</p>
 
       <ul className="mt-3 space-y-2">
+        {memberList.length === 0 ? (
+          <li className="rounded-lg border border-dashed border-border bg-background p-3 text-sm text-muted">No members yet.</li>
+        ) : null}
         {memberList.map((member) => {
           const displayName = member.fullName || member.email || 'Unknown user';
           const roleLocked = member.role === 'owner' || !isOwner;

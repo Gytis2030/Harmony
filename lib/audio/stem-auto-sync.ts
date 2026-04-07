@@ -67,7 +67,7 @@ function buildEnergyEnvelope(samples: Float32Array, sampleRate: number, config: 
   return env;
 }
 
-function normalizeSignal(values: Float32Array): Float32Array {
+export function normalizeSignal(values: Float32Array): Float32Array {
   let mean = 0;
   for (let i = 0; i < values.length; i += 1) mean += values[i];
   mean /= Math.max(1, values.length);
@@ -87,13 +87,13 @@ function normalizeSignal(values: Float32Array): Float32Array {
   return normalized;
 }
 
-function estimateSignalActivity(values: Float32Array): number {
+export function estimateSignalActivity(values: Float32Array): number {
   let sum = 0;
   for (let i = 0; i < values.length; i += 1) sum += Math.abs(values[i]);
   return sum / Math.max(1, values.length);
 }
 
-function crossCorrelateOffset(
+export function crossCorrelateOffset(
   reference: Float32Array,
   target: Float32Array,
   config: AnalysisConfig
@@ -147,6 +147,14 @@ function crossCorrelateOffset(
     ok: true,
     detail: `Aligned with score ${bestScore.toFixed(3)}.`
   };
+}
+
+export function normalizeOffsetsToZero(results: StemSyncResult[]): StemSyncResult[] {
+  const minOffset = results.reduce((min, entry) => Math.min(min, entry.offsetSec), 0);
+  return results.map((entry) => ({
+    ...entry,
+    offsetSec: Number((entry.offsetSec - minOffset).toFixed(3))
+  }));
 }
 
 async function decodeTrack(context: AudioContext, url: string): Promise<AudioBuffer> {
@@ -252,11 +260,7 @@ export async function autoSyncStemOffsets(
     }
 
     // Keep all offsets non-negative so timeline still starts at 0.
-    const minOffset = results.reduce((min, entry) => Math.min(min, entry.offsetSec), 0);
-    return results.map((entry) => ({
-      ...entry,
-      offsetSec: Number((entry.offsetSec - minOffset).toFixed(3))
-    }));
+    return normalizeOffsetsToZero(results);
   } finally {
     await context.close();
   }

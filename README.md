@@ -1,31 +1,42 @@
 # Harmony V1
 
-Harmony is a browser-based collaborative workspace for remote music production review. V1 focuses on tracks, timeline comments, project versions, and team collaboration.
+Harmony is a browser-based collaborative workspace for remote music production review. V1 focuses on track uploads, timeline comments, version snapshots, and team collaboration.
 
 ## Stack
 
 - Next.js 14 (App Router) + TypeScript
 - Tailwind CSS
-- Supabase Auth + Storage + Postgres
+- Supabase (Auth + Postgres + Storage)
 - WaveSurfer.js for waveform rendering
 - Zustand for local timeline state
-- Zod + React Hook Form for validation and forms
+- Zod + React Hook Form
 
-## Features in this scaffold
+## What is implemented
 
-- Email/password auth with login + signup on `/login`
-- Protected app shell routes (`/dashboard`, `/projects/*`) with middleware + server guards
-- Logout action in the app topbar
-- Project dashboard (`/dashboard`) with project creation
-- Project session page (`/projects/[projectId]`) with:
-  - track upload via Supabase signed upload URL
-  - waveform rendering using WaveSurfer
-  - timeline comments feed
-- SQL migration with required tables, profile auto-provisioning trigger, and strict RLS policies
+- Email/password auth (`/login`)
+- Protected app shell (`/dashboard`, `/projects/[projectId]`)
+- Project creation with automatic initial version snapshot
+- Project membership and role management
+- Stem upload flow with signed URLs and progress
+- Stem offset editing + auto sync
+- Timeline comments with resolve/unresolve
+- Version creation + restore offsets
+- Toast notifications for key user actions
+- Loading / empty / error states for key app routes and waveform loading
 
-## Environment variables
+---
 
-Create `.env.local` with:
+## Local setup
+
+### 1) Install dependencies
+
+```bash
+npm install
+```
+
+### 2) Configure environment
+
+Create `.env.local` in the repo root:
 
 ```bash
 NEXT_PUBLIC_SUPABASE_URL=https://<your-project-ref>.supabase.co
@@ -44,37 +55,81 @@ Optional:
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `NEXT_PUBLIC_APP_URL`
 
-## Supabase setup (exact steps)
+---
 
-1. Create a Supabase project.
-2. In Supabase Dashboard, go to **Authentication → Providers → Email** and enable Email auth.
-3. In your repo root, install dependencies:
-   ```bash
-   npm install
-   ```
-4. Run the SQL migration in `supabase/migrations/001_init.sql`:
-   - Option A (Dashboard): open **SQL Editor**, paste migration contents, run.
-   - Option B (Supabase CLI):
-     ```bash
-     supabase link --project-ref <your-project-ref>
-     supabase db push
-     ```
-5. Verify migration side effects:
-   - `tracks` private storage bucket exists.
-   - Tables exist: `profiles`, `projects`, `project_members`, `project_versions`, `tracks`, `comments`.
-   - RLS is enabled on all public tables.
-   - Trigger `on_auth_user_created` exists and inserts into `profiles`.
-6. Start the app:
-   ```bash
-   npm run dev
-   ```
-7. Visit `http://localhost:3000/login`, sign up, then you should be redirected to `/dashboard`.
+## Supabase setup
 
-## Folder structure
+### 1) Create project and enable Email auth
 
-- `app/` Next.js App Router pages, layouts, API route handlers
-- `components/` shared UI and feature components
-- `lib/` env, Supabase clients, validation schemas
-- `store/` lightweight client state (Zustand)
-- `types/` Supabase database typings
-- `supabase/migrations/` SQL schema migrations
+- In Supabase Dashboard, create a project.
+- Go to **Authentication → Providers → Email** and enable Email auth.
+
+### 2) Apply SQL migration
+
+Use the migration in `supabase/migrations/001_init.sql`.
+
+#### Option A: Supabase Dashboard SQL editor
+
+1. Open **SQL Editor**.
+2. Paste migration contents from `supabase/migrations/001_init.sql`.
+3. Run it.
+
+#### Option B: Supabase CLI
+
+```bash
+supabase link --project-ref <your-project-ref>
+supabase db push
+```
+
+### 3) Confirm storage bucket and policies
+
+After migration, verify:
+
+- Storage bucket `tracks` exists and is private.
+- Tables exist: `profiles`, `projects`, `project_members`, `project_versions`, `tracks`, `comments`.
+- RLS is enabled for those tables.
+- Trigger `on_auth_user_created` exists.
+- Storage policies for bucket `tracks` exist.
+
+> The migration already creates the `tracks` bucket and storage policies. No manual bucket creation is required unless your environment blocks storage DDL.
+
+---
+
+## Run the app
+
+```bash
+npm run dev
+```
+
+Open:
+
+- App: `http://localhost:3000`
+- Login: `http://localhost:3000/login`
+
+Sign up with email/password, then you should land on `/dashboard`.
+
+---
+
+## Testing & checks
+
+```bash
+npm run test
+npm run typecheck
+npm run lint
+```
+
+## Optional dev helper strategy (not required for production use)
+
+If you need demo data quickly, keep helper scripts/SQL external to production migrations (for example a local-only SQL seed file). Harmony does **not** require fake data to run.
+
+---
+
+## Project structure
+
+- `app/` App Router pages, layouts, API handlers
+- `components/` feature + shared components
+- `lib/` utilities, Supabase clients, validation, audio logic
+- `store/` Zustand state
+- `types/` DB types
+- `supabase/migrations/` schema + policies
+- `tests/` lightweight utility tests

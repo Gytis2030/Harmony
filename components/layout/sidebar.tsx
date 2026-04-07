@@ -1,14 +1,13 @@
 import Link from 'next/link';
-import { FolderKanban, LayoutDashboard, Music2 } from 'lucide-react';
+import { LayoutDashboard, Music2 } from 'lucide-react';
 
 const navItems = [
-  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/projects/demo-project', label: 'Current Project', icon: FolderKanban }
+  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard }
 ];
 
 export function Sidebar() {
   return (
-    <aside className="hidden w-64 flex-col border-r border-border bg-surface/50 p-5 md:flex">
+    <aside className="hidden w-72 flex-col border-r border-border bg-surface/50 p-5 lg:flex">
       <div className="mb-8 flex items-center gap-2 text-lg font-semibold">
         <Music2 className="h-5 w-5 text-brand" /> Harmony
       </div>

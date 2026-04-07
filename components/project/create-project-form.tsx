@@ -4,10 +4,12 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
+import { useToast } from '@/components/ui/toast-provider';
 import { createProjectSchema, type CreateProjectSchema } from '@/lib/validation/project';
 
 export function CreateProjectForm() {
   const router = useRouter();
+  const { notify } = useToast();
   const [submitError, setSubmitError] = useState<string | null>(null);
   const {
     register,
@@ -27,12 +29,15 @@ export function CreateProjectForm() {
 
     if (!response.ok) {
       const payload = (await response.json().catch(() => null)) as { error?: string } | null;
-      setSubmitError(payload?.error ?? 'Failed to create project.');
+      const message = payload?.error ?? 'Failed to create project.';
+      setSubmitError(message);
+      notify(message, 'error');
       return;
     }
 
     const payload = (await response.json()) as { id: string };
     reset();
+    notify('Project created successfully.', 'success');
     router.push(`/projects/${payload.id}`);
   };
 

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import { WaveformPlayer } from '@/components/project/waveform-player';
+import { useToast } from '@/components/ui/toast-provider';
 import { autoSyncStemOffsets, type StemSyncResult } from '@/lib/audio/stem-auto-sync';
 import type { ProjectRole } from '@/lib/project-members';
 import { useTimelineStore } from '@/store/timeline-store';
@@ -73,6 +74,7 @@ function formatDate(value: string) {
 
 export function TrackPlaybackPanel({ projectId, permissions, tracks, initialComments, initialVersions }: TrackPlaybackPanelProps) {
   const OFFSET_NUDGE_FINE = 0.01;
+  const { notify } = useToast();
   const OFFSET_NUDGE_COARSE = 0.1;
   const cursorMs = useTimelineStore((state) => state.cursorMs);
   const setCursorMs = useTimelineStore((state) => state.setCursorMs);
@@ -287,7 +289,9 @@ export function TrackPlaybackPanel({ projectId, permissions, tracks, initialComm
     const payload = await response.json();
 
     if (!response.ok) {
-      setCommentError(payload.error ?? 'Failed to create comment.');
+      const message = payload.error ?? 'Failed to create comment.';
+      setCommentError(message);
+      notify(message, 'error');
       setIsSavingComment(false);
       return;
     }
@@ -320,6 +324,7 @@ export function TrackPlaybackPanel({ projectId, permissions, tracks, initialComm
     ]);
     setCommentText('');
     setIsSavingComment(false);
+    notify('Comment added.', 'success');
   }, [commentText, commentTimestampSec, permissions.canComment, projectId, selectedTrackId]);
 
   const toggleResolved = useCallback(
@@ -330,9 +335,13 @@ export function TrackPlaybackPanel({ projectId, permissions, tracks, initialComm
         body: JSON.stringify({ commentId, resolved: nextResolved })
       });
 
-      if (!response.ok) return;
+      if (!response.ok) {
+        notify('Failed to update comment status.', 'error');
+        return;
+      }
 
       setComments((prev) => prev.map((comment) => (comment.id === commentId ? { ...comment, resolved: nextResolved } : comment)));
+      notify(`Comment marked as ${nextResolved ? 'resolved' : 'unresolved'}.`, 'success');
     },
     [isEditDisabled, projectId]
   );
@@ -391,9 +400,13 @@ export function TrackPlaybackPanel({ projectId, permissions, tracks, initialComm
 
       const alignedCount = results.filter((entry) => entry.status === 'aligned').length;
       const fallbackCount = results.filter((entry) => entry.status !== 'aligned' && entry.status !== 'reference').length;
-      setSyncMessage(`Auto sync complete. ${alignedCount} aligned, ${fallbackCount} fallback to 0s.`);
+      const message = `Auto sync complete. ${alignedCount} aligned, ${fallbackCount} fallback to 0s.`;
+      setSyncMessage(message);
+      notify(message, 'success');
     } catch (error) {
-      setSyncMessage(error instanceof Error ? error.message : 'Auto sync failed.');
+      const message = error instanceof Error ? error.message : 'Auto sync failed.';
+      setSyncMessage(message);
+      notify(message, 'error');
     } finally {
       setIsSyncingStems(false);
     }
@@ -493,7 +506,9 @@ export function TrackPlaybackPanel({ projectId, permissions, tracks, initialComm
       setVersionNotesInput('');
       setVersionActionMessage('Version saved.');
     } catch (error) {
-      setVersionActionMessage(error instanceof Error ? error.message : 'Failed to save version.');
+      const message = error instanceof Error ? error.message : 'Failed to save version.';
+      setVersionActionMessage(message);
+      notify(message, 'error');
     } finally {
       setIsSavingVersion(false);
     }
@@ -534,21 +549,25 @@ export function TrackPlaybackPanel({ projectId, permissions, tracks, initialComm
       });
       seekTimeline(timelineSec);
       setVersionActionMessage('Track offsets restored from selected version.');
+      notify('Track offsets restored.', 'success');
     } catch (error) {
-      setVersionActionMessage(error instanceof Error ? error.message : 'Failed to restore offsets.');
+      const message = error instanceof Error ? error.message : 'Failed to restore offsets.';
+      setVersionActionMessage(message);
+      notify(message, 'error');
     } finally {
       setIsRestoringOffsets(false);
     }
   }, [isEditDisabled, projectId, seekTimeline, selectedVersion, timelineSec]);
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">
+    <div className="grid gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(320px,1fr)]">
       <div className="card p-4">
         <h2 className="text-lg font-medium">Project timeline</h2>
         <p className="mt-1 text-xs text-muted">Unified waveform playback with offset-aware stem alignment and review notes.</p>
         <p className="mt-1 text-xs text-muted">Your role: <span className="font-medium capitalize">{permissions.role}</span>{isEditDisabled ? ' (editing disabled)' : ''}</p>
 
         <div className="mt-4 rounded-lg border border-border bg-background p-3">
+          {trackList.length === 0 ? <p className="text-sm text-muted">Upload stems to enable playback and sync controls.</p> : null}
           <div className="flex flex-wrap items-center gap-2">
             <button className="rounded bg-brand px-3 py-1 text-sm font-medium text-white" onClick={() => setIsPlaying(true)}>
               Play

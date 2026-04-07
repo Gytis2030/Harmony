@@ -48,45 +48,53 @@ export type ProjectVersionSnapshotV1 = {
   };
 };
 
-export async function buildProjectVersionSnapshot(client: any, projectId: string): Promise<ProjectVersionSnapshotV1> {
-  const [{ data: project, error: projectError }, { data: tracks, error: tracksError }, { data: comments, error: commentsError }] = await Promise.all([
-    client.from('projects').select('id, name, description, bpm, key_signature, updated_at').eq('id', projectId).single(),
-    client
-      .from('tracks')
-      .select('id, name, offset_sec, duration_sec, version_id, uploaded_by, created_at, file_path, mime_type, file_size_bytes')
-      .eq('project_id', projectId)
-      .order('created_at', { ascending: true }),
-    client
-      .from('comments')
-      .select('id, track_id, author_id, timestamp_sec, body, resolved, created_at')
-      .eq('project_id', projectId)
-      .order('created_at', { ascending: false })
-      .limit(50)
-  ]);
+type SnapshotRows = {
+  project: {
+    id: string;
+    name: string;
+    description: string | null;
+    bpm: number | null;
+    key_signature: string | null;
+    updated_at: string;
+  };
+  tracks: Array<{
+    id: string;
+    name: string;
+    offset_sec: number;
+    duration_sec: number | null;
+    version_id: string | null;
+    uploaded_by: string;
+    created_at: string;
+    file_path: string;
+    mime_type: string | null;
+    file_size_bytes: number | null;
+  }>;
+  comments: Array<{
+    id: string;
+    track_id: string | null;
+    author_id: string;
+    timestamp_sec: number;
+    body: string;
+    resolved: boolean;
+    created_at: string;
+  }>;
+  createdAt?: string;
+};
 
-  if (projectError || !project) {
-    throw new Error(projectError?.message ?? 'Failed to load project metadata for version snapshot.');
-  }
-  if (tracksError) {
-    throw new Error(tracksError.message ?? 'Failed to load tracks for version snapshot.');
-  }
-  if (commentsError) {
-    throw new Error(commentsError.message ?? 'Failed to load comments for version snapshot.');
-  }
-
-  const trackRows = tracks ?? [];
-  const commentRows = comments ?? [];
+export function buildProjectVersionSnapshotFromRows(rows: SnapshotRows): ProjectVersionSnapshotV1 {
+  const trackRows = rows.tracks ?? [];
+  const commentRows = rows.comments ?? [];
 
   return {
     schemaVersion: 'project_snapshot_v1',
-    createdAt: new Date().toISOString(),
+    createdAt: rows.createdAt ?? new Date().toISOString(),
     project: {
-      id: project.id,
-      name: project.name,
-      description: project.description,
-      bpm: project.bpm,
-      keySignature: project.key_signature,
-      updatedAt: project.updated_at
+      id: rows.project.id,
+      name: rows.project.name,
+      description: rows.project.description,
+      bpm: rows.project.bpm,
+      keySignature: rows.project.key_signature,
+      updatedAt: rows.project.updated_at
     },
     tracks: trackRows.map((track) => ({
       id: track.id,
@@ -120,6 +128,41 @@ export async function buildProjectVersionSnapshot(client: any, projectId: string
   };
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function buildProjectVersionSnapshot(client: any, projectId: string): Promise<ProjectVersionSnapshotV1> {
+  const [{ data: project, error: projectError }, { data: tracks, error: tracksError }, { data: comments, error: commentsError }] = await Promise.all([
+    client.from('projects').select('id, name, description, bpm, key_signature, updated_at').eq('id', projectId).single(),
+    client
+      .from('tracks')
+      .select('id, name, offset_sec, duration_sec, version_id, uploaded_by, created_at, file_path, mime_type, file_size_bytes')
+      .eq('project_id', projectId)
+      .order('created_at', { ascending: true }),
+    client
+      .from('comments')
+      .select('id, track_id, author_id, timestamp_sec, body, resolved, created_at')
+      .eq('project_id', projectId)
+      .order('created_at', { ascending: false })
+      .limit(50)
+  ]);
+
+  if (projectError || !project) {
+    throw new Error(projectError?.message ?? 'Failed to load project metadata for version snapshot.');
+  }
+  if (tracksError) {
+    throw new Error(tracksError.message ?? 'Failed to load tracks for version snapshot.');
+  }
+  if (commentsError) {
+    throw new Error(commentsError.message ?? 'Failed to load comments for version snapshot.');
+  }
+
+  return buildProjectVersionSnapshotFromRows({
+    project,
+    tracks: tracks ?? [],
+    comments: comments ?? []
+  });
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function createProjectVersion(client: any, options: { projectId: string; createdBy: string; label: string; notes?: string | null }) {
   const snapshot = await buildProjectVersionSnapshot(client, options.projectId);
 

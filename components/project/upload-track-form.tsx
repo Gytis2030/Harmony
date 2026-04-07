@@ -2,6 +2,7 @@
 
 import { useMemo, useState, type ChangeEvent } from 'react';
 import { useRouter } from 'next/navigation';
+import { useToast } from '@/components/ui/toast-provider';
 
 type UploadTrackFormProps = {
   projectId: string;
@@ -84,6 +85,7 @@ function uploadFileWithProgress(signedUrl: string, file: File, onProgress: (prog
 
 export function UploadTrackForm({ projectId, canUpload }: UploadTrackFormProps) {
   const router = useRouter();
+  const { notify } = useToast();
   const [uploads, setUploads] = useState<UploadItem[]>([]);
 
   const activeUploads = useMemo(() => uploads.filter((u) => u.status !== 'done' && u.status !== 'error').length, [uploads]);
@@ -180,7 +182,7 @@ export function UploadTrackForm({ projectId, canUpload }: UploadTrackFormProps) 
 
     const successfulUploads = uploadResults.filter(Boolean).length;
     if (successfulUploads > 0) {
-      await fetch(`/api/projects/${projectId}/versions`, {
+      const snapshotResponse = await fetch(`/api/projects/${projectId}/versions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -188,7 +190,14 @@ export function UploadTrackForm({ projectId, canUpload }: UploadTrackFormProps) 
           notes: `Automatic snapshot after successful stem upload batch (${successfulUploads} file${successfulUploads === 1 ? '' : 's'}).`
         })
       });
+      if (!snapshotResponse.ok) {
+        notify('Tracks uploaded, but auto snapshot failed.', 'error');
+      } else {
+        notify(`Uploaded ${successfulUploads} track${successfulUploads === 1 ? '' : 's'}.`, 'success');
+      }
       router.refresh();
+    } else if (selectedFiles.length > 0) {
+      notify('No files were uploaded successfully.', 'error');
     }
   };
 
