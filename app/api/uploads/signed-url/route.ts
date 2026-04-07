@@ -7,6 +7,10 @@ const signedUrlSchema = z.object({
   fileName: z.string().min(1)
 });
 
+function sanitizeFileName(fileName: string) {
+  return fileName.replace(/[^a-zA-Z0-9._-]/g, '-').toLowerCase();
+}
+
 export async function POST(request: Request) {
   const payload = await request.json();
   const parsed = signedUrlSchema.safeParse(payload);
@@ -24,7 +28,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Unauthorized.' }, { status: 401 });
   }
 
-  const safeName = `${Date.now()}-${parsed.data.fileName.replace(/\s+/g, '-').toLowerCase()}`;
+  const { data: project } = await supabase.from('projects').select('id').eq('id', parsed.data.projectId).maybeSingle();
+
+  if (!project) {
+    return NextResponse.json({ error: 'Project not found or access denied.' }, { status: 404 });
+  }
+
+  const safeName = `${Date.now()}-${sanitizeFileName(parsed.data.fileName)}`;
   const storagePath = `${parsed.data.projectId}/${safeName}`;
 
   const { data: signed, error: signError } = await supabase.storage.from('tracks').createSignedUploadUrl(storagePath, { upsert: false });
@@ -32,14 +42,6 @@ export async function POST(request: Request) {
   if (signError || !signed) {
     return NextResponse.json({ error: signError?.message ?? 'Failed to create upload URL' }, { status: 500 });
   }
-
-  await supabase.from('tracks').insert({
-    project_id: parsed.data.projectId,
-    file_path: storagePath,
-    name: parsed.data.fileName,
-    uploaded_by: user.id,
-    offset_sec: 0
-  });
 
   return NextResponse.json({ signedUrl: signed.signedUrl, path: storagePath });
 }
