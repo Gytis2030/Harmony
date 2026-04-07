@@ -91,7 +91,6 @@ export function TrackPlaybackPanel({ projectId, permissions, tracks, initialComm
   const clearPendingSeek = useTimelineStore((state) => state.clearPendingSeek);
   const runtimeRef = useRef<Record<string, TrackRuntime>>({});
   const rafRef = useRef<number | null>(null);
-  const driftCheckRafRef = useRef<number | null>(null);
   const startClockRef = useRef<number | null>(null);
   const timelineAtStartRef = useRef(0);
 
@@ -172,26 +171,15 @@ export function TrackPlaybackPanel({ projectId, permissions, tracks, initialComm
     });
   }, []);
 
-  const monitorPlaybackDrift = useCallback((timelineValueSec: number) => {
-    trackList.forEach((track) => {
-      const runtime = runtimeRef.current[track.id];
-      if (!runtime || !runtime.isPlaying) return;
-      const localExpected = timelineValueSec - track.offsetSec;
-      if (localExpected < 0 || localExpected >= runtime.durationSec) return;
-
-      const currentTime = runtime.waveSurfer.getCurrentTime();
-      const driftSec = Math.abs(currentTime - localExpected);
-      console.log(`[Playback] drift track=${track.id} drift=${driftSec.toFixed(3)}s`);
-      if (driftSec > 0.1) {
-        console.log(`[Playback] seek correction track=${track.id} expected=${localExpected.toFixed(3)} current=${currentTime.toFixed(3)}`);
-        runtime.waveSurfer.setTime(localExpected);
-      }
-    });
-  }, [trackList]);
-
-  const syncAudiosToTimeline = useCallback(
-    (nextTimelineSec: number, shouldPlay: boolean) => {
-      console.log(`[Playback] sync timeline=${nextTimelineSec.toFixed(3)} shouldPlay=${shouldPlay}`);
+  /**
+   * Simplified transport model (V1):
+   * - A track is only seeked during explicit transport actions (play start, stop, manual seek).
+   * - We never run continuous seek/drift correction while playing.
+   * - Multi-track playback is intentionally approximate and optimized for stable review behavior.
+   */
+  const applyTransportState = useCallback(
+    (nextTimelineSec: number, shouldPlay: boolean, forceSeek = false) => {
+      console.log(`[Playback] transport timeline=${nextTimelineSec.toFixed(3)} shouldPlay=${shouldPlay} forceSeek=${forceSeek}`);
       trackList.forEach((track) => {
         const runtime = runtimeRef.current[track.id];
         if (!runtime) return;
@@ -205,16 +193,12 @@ export function TrackPlaybackPanel({ projectId, permissions, tracks, initialComm
 
         const localTime = nextTimelineSec - track.offsetSec;
         const clampedLocalTime = Math.max(0, Math.min(localTime, runtime.durationSec || 0));
-
         const inTrackWindow = localTime >= 0 && localTime < runtime.durationSec;
-
         const shouldTrackPlay = shouldPlay && inTrackWindow && shouldBeAudible;
-        const currentTime = runtime.waveSurfer.getCurrentTime();
-        const driftSec = Math.abs(currentTime - clampedLocalTime);
-        const shouldSeek = !runtime.isPlaying || !shouldTrackPlay || driftSec > 0.1;
+        const shouldSeek = forceSeek || (!runtime.isPlaying && shouldTrackPlay) || (!shouldTrackPlay && runtime.isPlaying);
 
         if (shouldSeek) {
-          console.log(`[Playback] seek track=${track.id} time=${clampedLocalTime.toFixed(3)} drift=${driftSec.toFixed(3)}`);
+          console.log(`[Playback] seek track=${track.id} time=${clampedLocalTime.toFixed(3)}`);
           runtime.waveSurfer.setTime(clampedLocalTime);
         }
 
@@ -242,10 +226,10 @@ export function TrackPlaybackPanel({ projectId, permissions, tracks, initialComm
       setTimelineSec(bounded);
       setCursorMs(Math.floor(bounded * 1000));
       if (shouldSyncAudio) {
-        syncAudiosToTimeline(bounded, shouldPlayOverride ?? isPlayingRef.current);
+        applyTransportState(bounded, shouldPlayOverride ?? isPlayingRef.current, true);
       }
     },
-    [projectDurationSec, setCursorMs, syncAudiosToTimeline]
+    [applyTransportState, projectDurationSec, setCursorMs]
   );
 
   useEffect(() => {
@@ -267,10 +251,6 @@ export function TrackPlaybackPanel({ projectId, permissions, tracks, initialComm
       if (rafRef.current) {
         cancelAnimationFrame(rafRef.current);
         rafRef.current = null;
-      }
-      if (driftCheckRafRef.current) {
-        cancelAnimationFrame(driftCheckRafRef.current);
-        driftCheckRafRef.current = null;
       }
       startClockRef.current = null;
       return;
@@ -295,29 +275,16 @@ export function TrackPlaybackPanel({ projectId, permissions, tracks, initialComm
       rafRef.current = requestAnimationFrame(tick);
     };
 
-    const checkDrift = () => {
-      if (startClockRef.current == null) return;
-      const elapsed = (performance.now() - startClockRef.current) / 1000;
-      const currentTimeline = timelineAtStartRef.current + elapsed;
-      monitorPlaybackDrift(currentTimeline);
-      driftCheckRafRef.current = requestAnimationFrame(checkDrift);
-    };
-
-    syncAudiosToTimeline(timelineSec, true);
+    applyTransportState(timelineSec, true, true);
     rafRef.current = requestAnimationFrame(tick);
-    driftCheckRafRef.current = requestAnimationFrame(checkDrift);
 
     return () => {
       if (rafRef.current) {
         cancelAnimationFrame(rafRef.current);
         rafRef.current = null;
       }
-      if (driftCheckRafRef.current) {
-        cancelAnimationFrame(driftCheckRafRef.current);
-        driftCheckRafRef.current = null;
-      }
     };
-  }, [isPlaying, monitorPlaybackDrift, projectDurationSec, seekTimeline, stopAllAudio, syncAudiosToTimeline, timelineSec]);
+  }, [applyTransportState, isPlaying, projectDurationSec, seekTimeline, stopAllAudio, timelineSec]);
 
   useEffect(() => {
     return () => {
