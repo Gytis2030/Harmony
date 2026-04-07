@@ -37,9 +37,9 @@ export function WaveformPlayer({ audioUrl }: WaveformPlayerProps) {
   }, [audioUrl, setCursorMs]);
 
   return (
-    <section className="card p-4">
-      <h2 className="mb-3 text-sm font-medium uppercase tracking-wide text-muted">Waveform Timeline</h2>
-      {audioUrl ? <div ref={containerRef} /> : <p className="text-sm text-muted">Upload a track to render waveform.</p>}
+    <section>
+      <h3 className="mb-3 text-sm font-medium uppercase tracking-wide text-muted">Waveform Timeline</h3>
+      {audioUrl ? <div ref={containerRef} /> : <p className="text-sm text-muted">Select a track to render waveform.</p>}
     </section>
   );
 }

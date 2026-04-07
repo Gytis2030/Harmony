@@ -1,7 +1,11 @@
-import { WaveformPlayer } from '@/components/project/waveform-player';
+import { TrackPlaybackPanel } from '@/components/project/track-playback-panel';
 import { UploadTrackForm } from '@/components/project/upload-track-form';
 import { createClient } from '@/lib/supabase/server';
 import type { Comment, Track } from '@/types/database';
+
+type ProjectTrack = Track & {
+  signedUrl?: string;
+};
 
 async function getProjectData(projectId: string) {
   const supabase = createClient();
@@ -24,14 +28,19 @@ async function getSignedTrackUrl(path: string | undefined) {
   if (!path) return undefined;
 
   const supabase = createClient();
-  const { data } = await supabase.storage.from('tracks').createSignedUrl(path, 60);
+  const { data } = await supabase.storage.from('tracks').createSignedUrl(path, 60 * 5);
   return data?.signedUrl;
 }
 
 export default async function ProjectPage({ params }: { params: { projectId: string } }) {
   const { tracks, comments } = await getProjectData(params.projectId);
-  const primaryTrack = tracks[0];
-  const audioUrl = await getSignedTrackUrl(primaryTrack?.file_path);
+
+  const tracksWithUrls: ProjectTrack[] = await Promise.all(
+    tracks.map(async (track) => ({
+      ...track,
+      signedUrl: await getSignedTrackUrl(track.file_path)
+    }))
+  );
 
   return (
     <div className="space-y-6">
@@ -43,26 +52,20 @@ export default async function ProjectPage({ params }: { params: { projectId: str
         <UploadTrackForm projectId={params.projectId} />
       </section>
 
-      <WaveformPlayer audioUrl={audioUrl} />
-
       <section className="grid gap-6 lg:grid-cols-2">
-        <div className="card p-4">
-          <h2 className="text-lg font-medium">Tracks & alignment metadata</h2>
-          <ul className="mt-3 space-y-2 text-sm">
-            {tracks.length === 0 ? (
-              <li className="text-muted">No tracks uploaded yet.</li>
-            ) : (
-              tracks.map((track) => (
-                <li key={track.id} className="rounded-lg border border-border bg-background p-3">
-                  <p className="font-medium">{track.name}</p>
-                  <p className="mt-1 text-muted">
-                    Offset: {track.offset_sec}s · Sample rate: {track.sample_rate ?? 'n/a'} · Duration: {track.duration_sec ?? 'n/a'}s
-                  </p>
-                </li>
-              ))
-            )}
-          </ul>
-        </div>
+        <TrackPlaybackPanel
+          tracks={tracksWithUrls.map((track) => ({
+            id: track.id,
+            name: track.name,
+            mimeType: track.mime_type,
+            fileSizeBytes: track.file_size_bytes,
+            durationSec: track.duration_sec,
+            sampleRate: track.sample_rate,
+            channelCount: track.channel_count,
+            offsetSec: track.offset_sec,
+            signedUrl: track.signedUrl
+          }))}
+        />
         <div className="card p-4">
           <h2 className="text-lg font-medium">Timeline comments</h2>
           <ul className="mt-3 space-y-2 text-sm">
