@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import { WaveformPlayer } from '@/components/project/waveform-player';
 import { useTimelineStore } from '@/store/timeline-store';
 
@@ -16,8 +16,22 @@ type PlaybackTrack = {
   signedUrl?: string;
 };
 
+type ReviewComment = {
+  id: string;
+  projectId: string;
+  trackId: string | null;
+  authorId: string;
+  authorName: string;
+  timestampSec: number;
+  body: string;
+  resolved: boolean;
+  createdAt: string;
+};
+
 type TrackPlaybackPanelProps = {
+  projectId: string;
   tracks: PlaybackTrack[];
+  initialComments: ReviewComment[];
 };
 
 type TrackRuntime = {
@@ -34,8 +48,17 @@ function formatTime(seconds: number) {
   return `${mins}:${secs}`;
 }
 
-export function TrackPlaybackPanel({ tracks }: TrackPlaybackPanelProps) {
+function formatDate(value: string) {
+  return new Date(value).toLocaleString();
+}
+
+export function TrackPlaybackPanel({ projectId, tracks, initialComments }: TrackPlaybackPanelProps) {
+  const cursorMs = useTimelineStore((state) => state.cursorMs);
   const setCursorMs = useTimelineStore((state) => state.setCursorMs);
+  const selectedTrackId = useTimelineStore((state) => state.selectedTrackId);
+  const setSelectedTrackId = useTimelineStore((state) => state.setSelectedTrackId);
+  const pendingSeekMs = useTimelineStore((state) => state.pendingSeekMs);
+  const clearPendingSeek = useTimelineStore((state) => state.clearPendingSeek);
   const runtimeRef = useRef<Record<string, TrackRuntime>>({});
   const rafRef = useRef<number | null>(null);
   const startClockRef = useRef<number | null>(null);
@@ -46,6 +69,13 @@ export function TrackPlaybackPanel({ tracks }: TrackPlaybackPanelProps) {
   const [mutedTrackIds, setMutedTrackIds] = useState<Record<string, boolean>>({});
   const [soloTrackIds, setSoloTrackIds] = useState<Record<string, boolean>>({});
   const [runtimeVersion, setRuntimeVersion] = useState(0);
+  const [comments, setComments] = useState(initialComments);
+  const [commentText, setCommentText] = useState('');
+  const [commentTimestampSec, setCommentTimestampSec] = useState(0);
+  const [isSavingComment, setIsSavingComment] = useState(false);
+  const [commentError, setCommentError] = useState<string | null>(null);
+
+  const trackNameById = useMemo(() => new Map(tracks.map((track) => [track.id, track.name])), [tracks]);
 
   const projectDurationSec = useMemo(() => {
     return tracks.reduce((max, track) => {
@@ -56,6 +86,10 @@ export function TrackPlaybackPanel({ tracks }: TrackPlaybackPanelProps) {
   }, [runtimeVersion, tracks]);
 
   const hasSolo = useMemo(() => Object.values(soloTrackIds).some(Boolean), [soloTrackIds]);
+
+  const sortedComments = useMemo(() => {
+    return [...comments].sort((a, b) => a.timestampSec - b.timestampSec);
+  }, [comments]);
 
   const stopAllAudio = useCallback(() => {
     Object.values(runtimeRef.current).forEach(({ audio }) => {
@@ -102,6 +136,18 @@ export function TrackPlaybackPanel({ tracks }: TrackPlaybackPanelProps) {
     },
     [isPlaying, projectDurationSec, setCursorMs, syncAudiosToTimeline]
   );
+
+  useEffect(() => {
+    setCommentTimestampSec(cursorMs / 1000);
+  }, [cursorMs]);
+
+  useEffect(() => {
+    if (pendingSeekMs == null) return;
+
+    seekTimeline(pendingSeekMs / 1000);
+    setIsPlaying(false);
+    clearPendingSeek();
+  }, [clearPendingSeek, pendingSeekMs, seekTimeline]);
 
   useEffect(() => {
     if (!isPlaying) {
@@ -153,87 +199,275 @@ export function TrackPlaybackPanel({ tracks }: TrackPlaybackPanelProps) {
     setRuntimeVersion((count) => count + 1);
   }, []);
 
+  const handleTimelineClick = useCallback(
+    (event: MouseEvent<HTMLDivElement>, totalDurationSec: number) => {
+      const bounds = event.currentTarget.getBoundingClientRect();
+      const ratio = (event.clientX - bounds.left) / bounds.width;
+      const nextTimestamp = Math.max(0, Math.min(totalDurationSec, ratio * totalDurationSec));
+      seekTimeline(nextTimestamp);
+    },
+    [seekTimeline]
+  );
+
+  const handleCreateComment = useCallback(async () => {
+    if (!commentText.trim()) {
+      setCommentError('Comment text is required.');
+      return;
+    }
+
+    setCommentError(null);
+    setIsSavingComment(true);
+
+    const response = await fetch(`/api/projects/${projectId}/comments`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        timestampSec: commentTimestampSec,
+        body: commentText.trim(),
+        trackId: selectedTrackId
+      })
+    });
+
+    const payload = await response.json();
+
+    if (!response.ok) {
+      setCommentError(payload.error ?? 'Failed to create comment.');
+      setIsSavingComment(false);
+      return;
+    }
+
+    const created = payload.comment as {
+      id: string;
+      project_id: string;
+      track_id: string | null;
+      author_id: string;
+      timestamp_sec: number;
+      body: string;
+      resolved: boolean;
+      created_at: string;
+      profiles?: { full_name: string | null; email: string | null } | null;
+    };
+
+    setComments((prev) => [
+      ...prev,
+      {
+        id: created.id,
+        projectId: created.project_id,
+        trackId: created.track_id,
+        authorId: created.author_id,
+        timestampSec: created.timestamp_sec,
+        body: created.body,
+        resolved: created.resolved,
+        createdAt: created.created_at,
+        authorName: created.profiles?.full_name || created.profiles?.email || 'Unknown user'
+      }
+    ]);
+    setCommentText('');
+    setIsSavingComment(false);
+  }, [commentText, commentTimestampSec, projectId, selectedTrackId]);
+
+  const toggleResolved = useCallback(
+    async (commentId: string, nextResolved: boolean) => {
+      const response = await fetch(`/api/projects/${projectId}/comments`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ commentId, resolved: nextResolved })
+      });
+
+      if (!response.ok) return;
+
+      setComments((prev) => prev.map((comment) => (comment.id === commentId ? { ...comment, resolved: nextResolved } : comment)));
+    },
+    [projectId]
+  );
+
   return (
-    <div className="card p-4">
-      <h2 className="text-lg font-medium">Project timeline</h2>
-      <p className="mt-1 text-xs text-muted">Unified waveform playback with offset-aware stem alignment.</p>
+    <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">
+      <div className="card p-4">
+        <h2 className="text-lg font-medium">Project timeline</h2>
+        <p className="mt-1 text-xs text-muted">Unified waveform playback with offset-aware stem alignment and review notes.</p>
 
-      <div className="mt-4 rounded-lg border border-border bg-background p-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <button className="rounded bg-brand px-3 py-1 text-sm font-medium text-white" onClick={() => setIsPlaying(true)}>
-            Play
-          </button>
-          <button className="rounded border border-border px-3 py-1 text-sm" onClick={() => setIsPlaying(false)}>
-            Pause
-          </button>
-          <button
-            className="rounded border border-border px-3 py-1 text-sm"
-            onClick={() => {
-              setIsPlaying(false);
-              seekTimeline(0);
-            }}
-          >
-            Stop
-          </button>
-          <p className="text-sm text-muted">
-            {formatTime(timelineSec)} / {formatTime(projectDurationSec)}
-          </p>
+        <div className="mt-4 rounded-lg border border-border bg-background p-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <button className="rounded bg-brand px-3 py-1 text-sm font-medium text-white" onClick={() => setIsPlaying(true)}>
+              Play
+            </button>
+            <button className="rounded border border-border px-3 py-1 text-sm" onClick={() => setIsPlaying(false)}>
+              Pause
+            </button>
+            <button
+              className="rounded border border-border px-3 py-1 text-sm"
+              onClick={() => {
+                setIsPlaying(false);
+                seekTimeline(0);
+              }}
+            >
+              Stop
+            </button>
+            <p className="text-sm text-muted">
+              {formatTime(timelineSec)} / {formatTime(projectDurationSec)}
+            </p>
+          </div>
+          <div className="relative mt-3" onClick={(event) => handleTimelineClick(event, Math.max(projectDurationSec, 0.001))}>
+            <input
+              className="w-full"
+              type="range"
+              min={0}
+              max={Math.max(projectDurationSec, 0.001)}
+              step={0.01}
+              value={timelineSec}
+              onChange={(event) => {
+                seekTimeline(Number(event.target.value));
+              }}
+            />
+            {sortedComments.map((comment) => {
+              const leftPct = projectDurationSec > 0 ? (comment.timestampSec / projectDurationSec) * 100 : 0;
+              return (
+                <button
+                  key={`top-marker-${comment.id}`}
+                  className={`absolute top-0 h-2 w-2 -translate-x-1/2 rounded-full ${comment.resolved ? 'bg-emerald-500' : 'bg-amber-500'}`}
+                  style={{ left: `${Math.min(Math.max(leftPct, 0), 100)}%` }}
+                  title={comment.body}
+                  onClick={() => seekTimeline(comment.timestampSec)}
+                />
+              );
+            })}
+          </div>
         </div>
-        <input
-          className="mt-3 w-full"
-          type="range"
-          min={0}
-          max={Math.max(projectDurationSec, 0.001)}
-          step={0.01}
-          value={timelineSec}
-          onChange={(event) => {
-            seekTimeline(Number(event.target.value));
-          }}
-        />
-      </div>
 
-      <div className="mt-4 space-y-3">
-        {tracks.length === 0 ? (
-          <p className="text-sm text-muted">No tracks uploaded yet.</p>
-        ) : (
-          tracks.map((track) => {
-            const runtimeDuration = runtimeRef.current[track.id]?.durationSec ?? track.durationSec ?? 0;
-            const leftPct = projectDurationSec > 0 ? (track.offsetSec / projectDurationSec) * 100 : 0;
-            const widthPct = projectDurationSec > 0 ? (runtimeDuration / projectDurationSec) * 100 : 100;
-            const playheadPct = projectDurationSec > 0 ? (timelineSec / projectDurationSec) * 100 : 0;
+        <div className="mt-4 space-y-3">
+          {tracks.length === 0 ? (
+            <p className="text-sm text-muted">No tracks uploaded yet.</p>
+          ) : (
+            tracks.map((track) => {
+              const runtimeDuration = runtimeRef.current[track.id]?.durationSec ?? track.durationSec ?? 0;
+              const leftPct = projectDurationSec > 0 ? (track.offsetSec / projectDurationSec) * 100 : 0;
+              const widthPct = projectDurationSec > 0 ? (runtimeDuration / projectDurationSec) * 100 : 100;
+              const playheadPct = projectDurationSec > 0 ? (timelineSec / projectDurationSec) * 100 : 0;
 
-            return (
-              <div key={track.id} className="rounded-lg border border-border bg-background p-3">
-                <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                  <p className="font-medium">{track.name}</p>
-                  <div className="flex items-center gap-2 text-xs">
-                    <button
-                      className={`rounded border px-2 py-1 ${mutedTrackIds[track.id] ? 'border-brand text-brand' : 'border-border'}`}
-                      onClick={() => setMutedTrackIds((prev) => ({ ...prev, [track.id]: !prev[track.id] }))}
-                    >
-                      Mute
-                    </button>
-                    <button
-                      className={`rounded border px-2 py-1 ${soloTrackIds[track.id] ? 'border-brand text-brand' : 'border-border'}`}
-                      onClick={() => setSoloTrackIds((prev) => ({ ...prev, [track.id]: !prev[track.id] }))}
-                    >
-                      Solo
-                    </button>
-                    <span className="text-muted">Offset: {track.offsetSec.toFixed(2)}s</span>
+              return (
+                <div key={track.id} className="rounded-lg border border-border bg-background p-3">
+                  <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                    <p className="font-medium">{track.name}</p>
+                    <div className="flex items-center gap-2 text-xs">
+                      <button
+                        className={`rounded border px-2 py-1 ${selectedTrackId === track.id ? 'border-brand text-brand' : 'border-border'}`}
+                        onClick={() => setSelectedTrackId(selectedTrackId === track.id ? null : track.id)}
+                      >
+                        {selectedTrackId === track.id ? 'Track Selected' : 'Select Track'}
+                      </button>
+                      <button
+                        className={`rounded border px-2 py-1 ${mutedTrackIds[track.id] ? 'border-brand text-brand' : 'border-border'}`}
+                        onClick={() => setMutedTrackIds((prev) => ({ ...prev, [track.id]: !prev[track.id] }))}
+                      >
+                        Mute
+                      </button>
+                      <button
+                        className={`rounded border px-2 py-1 ${soloTrackIds[track.id] ? 'border-brand text-brand' : 'border-border'}`}
+                        onClick={() => setSoloTrackIds((prev) => ({ ...prev, [track.id]: !prev[track.id] }))}
+                      >
+                        Solo
+                      </button>
+                      <span className="text-muted">Offset: {track.offsetSec.toFixed(2)}s</span>
+                    </div>
+                  </div>
+
+                  <div
+                    className="relative h-20 overflow-hidden rounded border border-border bg-background/60"
+                    onClick={(event) => handleTimelineClick(event, Math.max(projectDurationSec, 0.001))}
+                  >
+                    <div className="absolute bottom-0 top-0 w-0.5 bg-brand" style={{ left: `${playheadPct}%` }} />
+                    {sortedComments.map((comment) => {
+                      if (comment.trackId && comment.trackId !== track.id) return null;
+                      const markerLeftPct = projectDurationSec > 0 ? (comment.timestampSec / projectDurationSec) * 100 : 0;
+                      return (
+                        <button
+                          key={`track-${track.id}-comment-${comment.id}`}
+                          className={`absolute top-1 h-3 w-1 -translate-x-1/2 rounded ${comment.resolved ? 'bg-emerald-400' : 'bg-amber-400'}`}
+                          style={{ left: `${Math.min(Math.max(markerLeftPct, 0), 100)}%` }}
+                          onClick={() => seekTimeline(comment.timestampSec)}
+                          title={`${comment.authorName}: ${comment.body}`}
+                        />
+                      );
+                    })}
+                    <div className="absolute bottom-0 top-0" style={{ left: `${leftPct}%`, width: `${Math.max(widthPct, 2)}%` }}>
+                      <WaveformPlayer trackId={track.id} audioUrl={track.signedUrl} onReady={handleTrackReady} />
+                    </div>
                   </div>
                 </div>
-
-                <div className="relative h-20 overflow-hidden rounded border border-border bg-background/60">
-                  <div className="absolute bottom-0 top-0 w-0.5 bg-brand" style={{ left: `${playheadPct}%` }} />
-                  <div className="absolute bottom-0 top-0" style={{ left: `${leftPct}%`, width: `${Math.max(widthPct, 2)}%` }}>
-                    <WaveformPlayer trackId={track.id} audioUrl={track.signedUrl} onReady={handleTrackReady} />
-                  </div>
-                </div>
-              </div>
-            );
-          })
-        )}
+              );
+            })
+          )}
+        </div>
       </div>
+
+      <aside className="card p-4">
+        <h2 className="text-lg font-medium">Comments</h2>
+        <p className="mt-1 text-xs text-muted">Add timeline notes like Figma or Frame.io, with optional track context.</p>
+
+        <div className="mt-4 space-y-2 rounded-lg border border-border bg-background p-3">
+          <label className="block text-xs font-medium">Timestamp (seconds)</label>
+          <input
+            className="w-full rounded border border-border bg-background px-2 py-1 text-sm"
+            type="number"
+            min={0}
+            step={0.01}
+            value={commentTimestampSec}
+            onChange={(event) => setCommentTimestampSec(Number(event.target.value))}
+          />
+          <p className="text-xs text-muted">Click the timeline/waveform to prefill this timestamp.</p>
+          <label className="block text-xs font-medium">Track (optional)</label>
+          <select
+            value={selectedTrackId ?? ''}
+            onChange={(event) => setSelectedTrackId(event.target.value || null)}
+            className="w-full rounded border border-border bg-background px-2 py-1 text-sm"
+          >
+            <option value="">General project comment</option>
+            {tracks.map((track) => (
+              <option key={track.id} value={track.id}>
+                {track.name}
+              </option>
+            ))}
+          </select>
+          <label className="block text-xs font-medium">Comment</label>
+          <textarea
+            className="min-h-20 w-full rounded border border-border bg-background px-2 py-1 text-sm"
+            value={commentText}
+            onChange={(event) => setCommentText(event.target.value)}
+            placeholder="What should be changed at this point in the timeline?"
+          />
+          {commentError ? <p className="text-xs text-red-500">{commentError}</p> : null}
+          <button className="rounded bg-brand px-3 py-1 text-sm font-medium text-white" onClick={handleCreateComment} disabled={isSavingComment}>
+            {isSavingComment ? 'Saving…' : 'Add comment'}
+          </button>
+        </div>
+
+        <ul className="mt-4 space-y-2 text-sm">
+          {sortedComments.length === 0 ? (
+            <li className="text-muted">No comments yet.</li>
+          ) : (
+            sortedComments.map((comment) => (
+              <li key={comment.id} className={`rounded-lg border p-3 ${comment.resolved ? 'border-emerald-500/40 bg-emerald-500/5' : 'border-border bg-background'}`}>
+                <button className="w-full text-left" onClick={() => seekTimeline(comment.timestampSec)}>
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="font-medium">{comment.authorName}</p>
+                    <span className="text-xs text-muted">{formatTime(comment.timestampSec)}</span>
+                  </div>
+                  <p className="text-xs text-muted">{comment.trackId ? trackNameById.get(comment.trackId) ?? 'Unknown track' : 'All tracks'}</p>
+                  <p className="mt-1">{comment.body}</p>
+                  <p className="mt-1 text-xs text-muted">Created {formatDate(comment.createdAt)}</p>
+                </button>
+                <button
+                  className="mt-2 rounded border border-border px-2 py-1 text-xs"
+                  onClick={() => toggleResolved(comment.id, !comment.resolved)}
+                >
+                  Mark as {comment.resolved ? 'unresolved' : 'resolved'}
+                </button>
+              </li>
+            ))
+          )}
+        </ul>
+      </aside>
     </div>
   );
 }
