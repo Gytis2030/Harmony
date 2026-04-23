@@ -16,6 +16,7 @@ export function WaveformPlayer({ trackId, audioUrl, onReady, onDestroy }: Wavefo
   const isMountedRef = useRef(true);
   const activeLoadIdRef = useRef(0);
   const isTearingDownRef = useRef(false);
+  const lastLoadedUrlRef = useRef<string | null>(null);
   const [status, setStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
 
   useEffect(() => {
@@ -49,6 +50,7 @@ export function WaveformPlayer({ trackId, audioUrl, onReady, onDestroy }: Wavefo
       const instance = waveSurferRef.current;
       if (!instance) return;
       isTearingDownRef.current = true;
+      activeLoadIdRef.current += 1;
       console.log(`[WaveformPlayer] destroy track=${trackId}`);
       try {
         instance.stop();
@@ -60,6 +62,7 @@ export function WaveformPlayer({ trackId, audioUrl, onReady, onDestroy }: Wavefo
         }
       } finally {
         waveSurferRef.current = null;
+        lastLoadedUrlRef.current = null;
         onDestroy?.(trackId);
       }
     };
@@ -69,11 +72,14 @@ export function WaveformPlayer({ trackId, audioUrl, onReady, onDestroy }: Wavefo
     const waveSurfer = waveSurferRef.current;
     if (!waveSurfer || !audioUrl) {
       setStatus('idle');
+      lastLoadedUrlRef.current = null;
       return;
     }
+    if (lastLoadedUrlRef.current === audioUrl) return;
 
     activeLoadIdRef.current += 1;
     const loadId = activeLoadIdRef.current;
+    lastLoadedUrlRef.current = audioUrl;
     setStatus('loading');
 
     const handleReady = () => {
@@ -100,6 +106,7 @@ export function WaveformPlayer({ trackId, audioUrl, onReady, onDestroy }: Wavefo
     waveSurfer.load(audioUrl);
 
     return () => {
+      activeLoadIdRef.current += 1;
       waveSurfer.un('ready', handleReady);
       waveSurfer.un('error', handleError);
     };
