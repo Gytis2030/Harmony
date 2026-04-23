@@ -668,6 +668,7 @@ export function TrackPlaybackPanel({ projectId, permissions, tracks, initialComm
               className="rounded bg-brand px-3 py-1 text-sm font-medium text-white"
               onClick={async () => {
                 try {
+                  if (isPlayingRef.current) return;
                   console.log('[Playback] play clicked');
                   await ensurePlaybackUrlsFresh();
                   setIsPlaying(true);
