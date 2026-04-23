@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import WaveSurfer from 'wavesurfer.js';
 
 type WaveformPlayerProps = {
@@ -14,8 +14,10 @@ export function WaveformPlayer({ trackId, audioUrl, onReady, onDestroy }: Wavefo
   const containerRef = useRef<HTMLDivElement | null>(null);
   const waveSurferRef = useRef<WaveSurfer | null>(null);
   const isMountedRef = useRef(true);
-  const activeLoadIdRef = useRef(0);
-  const isTearingDownRef = useRef(false);
+  const isLoadingRef = useRef(false);
+  const isReadyRef = useRef(false);
+  const pendingDestroyReasonRef = useRef<string | null>(null);
+  const shouldDestroyOnSettleRef = useRef(false);
   const lastLoadedUrlRef = useRef<string | null>(null);
   const [status, setStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
 
@@ -26,10 +28,32 @@ export function WaveformPlayer({ trackId, audioUrl, onReady, onDestroy }: Wavefo
     };
   }, []);
 
+  const destroyWaveSurfer = useCallback((reason: string) => {
+    const instance = waveSurferRef.current;
+    if (!instance) return;
+    console.log(`[WaveformPlayer] destroy track=${trackId} reason=${reason}`);
+    try {
+      instance.stop();
+      instance.destroy();
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      if (!errorMessage.includes('AbortError') && !errorMessage.includes('aborted')) {
+        console.warn(`[WaveformPlayer] destroy failed track=${trackId}`, error);
+      }
+    } finally {
+      waveSurferRef.current = null;
+      isLoadingRef.current = false;
+      isReadyRef.current = false;
+      shouldDestroyOnSettleRef.current = false;
+      pendingDestroyReasonRef.current = null;
+      lastLoadedUrlRef.current = null;
+      onDestroy?.(trackId);
+    }
+  }, [onDestroy, trackId]);
+
   useEffect(() => {
     if (!containerRef.current || waveSurferRef.current) return;
 
-    isTearingDownRef.current = false;
     console.log(`[WaveformPlayer] init track=${trackId}`);
     const waveSurfer = WaveSurfer.create({
       container: containerRef.current,
@@ -47,26 +71,16 @@ export function WaveformPlayer({ trackId, audioUrl, onReady, onDestroy }: Wavefo
     waveSurferRef.current = waveSurfer;
 
     return () => {
-      const instance = waveSurferRef.current;
-      if (!instance) return;
-      isTearingDownRef.current = true;
-      activeLoadIdRef.current += 1;
-      console.log(`[WaveformPlayer] destroy track=${trackId}`);
-      try {
-        instance.stop();
-        instance.destroy();
-      } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        if (!errorMessage.includes('AbortError') && !errorMessage.includes('aborted')) {
-          console.warn(`[WaveformPlayer] destroy failed track=${trackId}`, error);
-        }
-      } finally {
-        waveSurferRef.current = null;
-        lastLoadedUrlRef.current = null;
-        onDestroy?.(trackId);
+      if (!waveSurferRef.current) return;
+      if (isLoadingRef.current) {
+        shouldDestroyOnSettleRef.current = true;
+        pendingDestroyReasonRef.current = 'component-unmount';
+        console.log(`[WaveformPlayer] skipped destroy due to loading track=${trackId} reason=component-unmount`);
+        return;
       }
+      destroyWaveSurfer('component-unmount');
     };
-  }, [onDestroy, trackId]);
+  }, [destroyWaveSurfer, trackId]);
 
   useEffect(() => {
     const waveSurfer = waveSurferRef.current;
@@ -77,40 +91,72 @@ export function WaveformPlayer({ trackId, audioUrl, onReady, onDestroy }: Wavefo
     }
     if (lastLoadedUrlRef.current === audioUrl) return;
 
-    activeLoadIdRef.current += 1;
-    const loadId = activeLoadIdRef.current;
     lastLoadedUrlRef.current = audioUrl;
+    isLoadingRef.current = true;
+    isReadyRef.current = false;
     setStatus('loading');
+    console.log(`[WaveformPlayer] load start track=${trackId} url=${audioUrl}`);
 
     const handleReady = () => {
-      if (!isMountedRef.current || activeLoadIdRef.current !== loadId || isTearingDownRef.current) return;
+      isLoadingRef.current = false;
+      isReadyRef.current = true;
       console.log(`[WaveformPlayer] ready track=${trackId}`);
+      if (!isMountedRef.current) {
+        if (shouldDestroyOnSettleRef.current) {
+          destroyWaveSurfer(pendingDestroyReasonRef.current ?? 'post-ready-unmount');
+        }
+        return;
+      }
       setStatus('ready');
       onReady(trackId, { waveSurfer, durationSec: waveSurfer.getDuration() || 0 });
+      if (shouldDestroyOnSettleRef.current) {
+        destroyWaveSurfer(pendingDestroyReasonRef.current ?? 'post-ready-destroy');
+      }
     };
 
     const handleError = (error: unknown) => {
-      if (!isMountedRef.current || activeLoadIdRef.current !== loadId || isTearingDownRef.current) return;
+      isLoadingRef.current = false;
+      isReadyRef.current = false;
       const errorMessage = error instanceof Error ? error.message : String(error);
       if (errorMessage.includes('AbortError') || errorMessage.includes('aborted')) {
-        console.log(`[WaveformPlayer] ignored abort track=${trackId} load=${loadId}`);
+        console.log(`[WaveformPlayer] ignored abort track=${trackId}`);
+        if (shouldDestroyOnSettleRef.current) {
+          destroyWaveSurfer(pendingDestroyReasonRef.current ?? 'post-abort-destroy');
+        }
+        return;
+      }
+      if (!isMountedRef.current) {
+        if (shouldDestroyOnSettleRef.current) {
+          destroyWaveSurfer(pendingDestroyReasonRef.current ?? 'post-error-unmount');
+        }
         return;
       }
       setStatus('error');
       console.warn(`[WaveformPlayer] error track=${trackId}`, error);
+      if (shouldDestroyOnSettleRef.current) {
+        destroyWaveSurfer(pendingDestroyReasonRef.current ?? 'post-error-destroy');
+      }
     };
 
     waveSurfer.on('ready', handleReady);
     waveSurfer.on('error', handleError);
-    console.log(`[WaveformPlayer] load track=${trackId} load=${loadId}`);
-    waveSurfer.load(audioUrl);
+    const loadResult = waveSurfer.load(audioUrl);
+    if (loadResult && typeof loadResult === 'object' && 'catch' in loadResult && typeof loadResult.catch === 'function') {
+      loadResult.catch((error: unknown) => {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        if (errorMessage.includes('AbortError') || errorMessage.includes('aborted')) {
+          console.log(`[WaveformPlayer] ignored abort track=${trackId}`);
+          return;
+        }
+        console.warn(`[WaveformPlayer] load promise rejected track=${trackId}`, error);
+      });
+    }
 
     return () => {
-      activeLoadIdRef.current += 1;
       waveSurfer.un('ready', handleReady);
       waveSurfer.un('error', handleError);
     };
-  }, [audioUrl, onReady, trackId]);
+  }, [audioUrl, destroyWaveSurfer, onReady, trackId]);
 
   if (!audioUrl) {
     return <p className="text-sm text-muted">Track file unavailable.</p>;
