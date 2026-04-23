@@ -7,13 +7,15 @@ type WaveformPlayerProps = {
   trackId: string;
   audioUrl?: string;
   onReady: (trackId: string, value: { waveSurfer: WaveSurfer; durationSec: number }) => void;
+  onDestroy?: (trackId: string) => void;
 };
 
-export function WaveformPlayer({ trackId, audioUrl, onReady }: WaveformPlayerProps) {
+export function WaveformPlayer({ trackId, audioUrl, onReady, onDestroy }: WaveformPlayerProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const waveSurferRef = useRef<WaveSurfer | null>(null);
   const isMountedRef = useRef(true);
   const activeLoadIdRef = useRef(0);
+  const isTearingDownRef = useRef(false);
   const [status, setStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
 
   useEffect(() => {
@@ -26,6 +28,8 @@ export function WaveformPlayer({ trackId, audioUrl, onReady }: WaveformPlayerPro
   useEffect(() => {
     if (!containerRef.current || waveSurferRef.current) return;
 
+    isTearingDownRef.current = false;
+    console.log(`[WaveformPlayer] init track=${trackId}`);
     const waveSurfer = WaveSurfer.create({
       container: containerRef.current,
       waveColor: '#48486a',
@@ -44,16 +48,22 @@ export function WaveformPlayer({ trackId, audioUrl, onReady }: WaveformPlayerPro
     return () => {
       const instance = waveSurferRef.current;
       if (!instance) return;
+      isTearingDownRef.current = true;
+      console.log(`[WaveformPlayer] destroy track=${trackId}`);
       try {
         instance.stop();
         instance.destroy();
       } catch (error) {
-        console.warn(`[WaveformPlayer] destroy failed track=${trackId}`, error);
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        if (!errorMessage.includes('AbortError') && !errorMessage.includes('aborted')) {
+          console.warn(`[WaveformPlayer] destroy failed track=${trackId}`, error);
+        }
       } finally {
         waveSurferRef.current = null;
+        onDestroy?.(trackId);
       }
     };
-  }, [trackId]);
+  }, [onDestroy, trackId]);
 
   useEffect(() => {
     const waveSurfer = waveSurferRef.current;
@@ -67,16 +77,17 @@ export function WaveformPlayer({ trackId, audioUrl, onReady }: WaveformPlayerPro
     setStatus('loading');
 
     const handleReady = () => {
-      if (!isMountedRef.current || activeLoadIdRef.current !== loadId) return;
+      if (!isMountedRef.current || activeLoadIdRef.current !== loadId || isTearingDownRef.current) return;
+      console.log(`[WaveformPlayer] ready track=${trackId}`);
       setStatus('ready');
       onReady(trackId, { waveSurfer, durationSec: waveSurfer.getDuration() || 0 });
     };
 
     const handleError = (error: unknown) => {
-      if (!isMountedRef.current || activeLoadIdRef.current !== loadId) return;
+      if (!isMountedRef.current || activeLoadIdRef.current !== loadId || isTearingDownRef.current) return;
       const errorMessage = error instanceof Error ? error.message : String(error);
       if (errorMessage.includes('AbortError') || errorMessage.includes('aborted')) {
-        console.log(`[WaveformPlayer] ignored abort track=${trackId}`);
+        console.log(`[WaveformPlayer] ignored abort track=${trackId} load=${loadId}`);
         return;
       }
       setStatus('error');
@@ -85,6 +96,7 @@ export function WaveformPlayer({ trackId, audioUrl, onReady }: WaveformPlayerPro
 
     waveSurfer.on('ready', handleReady);
     waveSurfer.on('error', handleError);
+    console.log(`[WaveformPlayer] load track=${trackId} load=${loadId}`);
     waveSurfer.load(audioUrl);
 
     return () => {

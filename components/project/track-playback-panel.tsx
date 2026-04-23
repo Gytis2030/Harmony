@@ -161,12 +161,14 @@ export function TrackPlaybackPanel({ projectId, permissions, tracks, initialComm
 
   const selectedVersion = useMemo(() => versions.find((entry) => entry.id === selectedVersionId) ?? null, [selectedVersionId, versions]);
 
-  const stopAllAudio = useCallback(() => {
-    console.log('[Playback] stopAllAudio');
+  const stopAllAudio = useCallback((resetToZero = false) => {
+    console.log(`[Playback] stopAllAudio resetToZero=${resetToZero}`);
     Object.entries(runtimeRef.current).forEach(([trackId, runtime]) => {
       console.log(`[Playback] stop track=${trackId}`);
-      runtime.waveSurfer.stop();
       runtime.waveSurfer.pause();
+      if (resetToZero) {
+        runtime.waveSurfer.setTime(0);
+      }
       runtime.isPlaying = false;
     });
   }, []);
@@ -195,7 +197,7 @@ export function TrackPlaybackPanel({ projectId, permissions, tracks, initialComm
         const clampedLocalTime = Math.max(0, Math.min(localTime, runtime.durationSec || 0));
         const inTrackWindow = localTime >= 0 && localTime < runtime.durationSec;
         const shouldTrackPlay = shouldPlay && inTrackWindow && shouldBeAudible;
-        const shouldSeek = forceSeek || (!runtime.isPlaying && shouldTrackPlay) || (!shouldTrackPlay && runtime.isPlaying);
+        const shouldSeek = forceSeek;
 
         if (shouldSeek) {
           console.log(`[Playback] seek track=${track.id} time=${clampedLocalTime.toFixed(3)}`);
@@ -247,7 +249,7 @@ export function TrackPlaybackPanel({ projectId, permissions, tracks, initialComm
   useEffect(() => {
     if (!isPlaying) {
       console.log('[Playback] global pause');
-      stopAllAudio();
+      stopAllAudio(false);
       if (rafRef.current) {
         cancelAnimationFrame(rafRef.current);
         rafRef.current = null;
@@ -288,12 +290,18 @@ export function TrackPlaybackPanel({ projectId, permissions, tracks, initialComm
 
   useEffect(() => {
     return () => {
-      stopAllAudio();
+      stopAllAudio(true);
     };
   }, [stopAllAudio]);
 
   const handleTrackReady = useCallback((trackId: string, value: Omit<TrackRuntime, 'isPlaying'>) => {
+    console.log(`[Playback] ready track=${trackId} duration=${value.durationSec.toFixed(3)}`);
     runtimeRef.current[trackId] = { ...value, isPlaying: false };
+  }, []);
+
+  const handleTrackDestroy = useCallback((trackId: string) => {
+    console.log(`[Playback] destroy track=${trackId}`);
+    delete runtimeRef.current[trackId];
   }, []);
 
   const refreshTrackPlaybackUrl = useCallback(
@@ -339,6 +347,10 @@ export function TrackPlaybackPanel({ projectId, permissions, tracks, initialComm
       const bounds = event.currentTarget.getBoundingClientRect();
       const ratio = (event.clientX - bounds.left) / bounds.width;
       const nextTimestamp = Math.max(0, Math.min(totalDurationSec, ratio * totalDurationSec));
+      if (isPlayingRef.current) {
+        console.log('[Playback] pause for manual seek');
+        setIsPlaying(false);
+      }
       seekTimeline(nextTimestamp);
     },
     [seekTimeline]
@@ -656,6 +668,7 @@ export function TrackPlaybackPanel({ projectId, permissions, tracks, initialComm
               className="rounded bg-brand px-3 py-1 text-sm font-medium text-white"
               onClick={async () => {
                 try {
+                  console.log('[Playback] play clicked');
                   await ensurePlaybackUrlsFresh();
                   setIsPlaying(true);
                 } catch (error) {
@@ -665,14 +678,19 @@ export function TrackPlaybackPanel({ projectId, permissions, tracks, initialComm
             >
               Play
             </button>
-            <button className="rounded border border-border px-3 py-1 text-sm" onClick={() => setIsPlaying(false)}>
+            <button className="rounded border border-border px-3 py-1 text-sm" onClick={() => {
+              console.log('[Playback] pause clicked');
+              setIsPlaying(false);
+            }}>
               Pause
             </button>
             <button
               className="rounded border border-border px-3 py-1 text-sm"
               onClick={() => {
+                console.log('[Playback] stop clicked');
                 setIsPlaying(false);
                 seekTimeline(0, false);
+                stopAllAudio(true);
               }}
             >
               Stop
@@ -717,6 +735,11 @@ export function TrackPlaybackPanel({ projectId, permissions, tracks, initialComm
               step={0.01}
               value={timelineSec}
               onChange={(event) => {
+                console.log(`[Playback] seek timeline=${Number(event.target.value).toFixed(3)}`);
+                if (isPlayingRef.current) {
+                  console.log('[Playback] pause for slider seek');
+                  setIsPlaying(false);
+                }
                 seekTimeline(Number(event.target.value));
               }}
             />
@@ -728,7 +751,13 @@ export function TrackPlaybackPanel({ projectId, permissions, tracks, initialComm
                   className={`absolute top-0 h-2 w-2 -translate-x-1/2 rounded-full ${comment.resolved ? 'bg-emerald-500' : 'bg-amber-500'}`}
                   style={{ left: `${Math.min(Math.max(leftPct, 0), 100)}%` }}
                   title={comment.body}
-                  onClick={() => seekTimeline(comment.timestampSec)}
+                  onClick={() => {
+                    if (isPlayingRef.current) {
+                      console.log('[Playback] pause for marker seek');
+                      setIsPlaying(false);
+                    }
+                    seekTimeline(comment.timestampSec);
+                  }}
                 />
               );
             })}
@@ -855,13 +884,19 @@ export function TrackPlaybackPanel({ projectId, permissions, tracks, initialComm
                           key={`track-${track.id}-comment-${comment.id}`}
                           className={`absolute top-1 h-3 w-1 -translate-x-1/2 rounded ${comment.resolved ? 'bg-emerald-400' : 'bg-amber-400'}`}
                           style={{ left: `${Math.min(Math.max(markerLeftPct, 0), 100)}%` }}
-                          onClick={() => seekTimeline(comment.timestampSec)}
+                          onClick={() => {
+                            if (isPlayingRef.current) {
+                              console.log('[Playback] pause for comment seek');
+                              setIsPlaying(false);
+                            }
+                            seekTimeline(comment.timestampSec);
+                          }}
                           title={`${comment.authorName}: ${comment.body}`}
                         />
                       );
                     })}
                     <div className="absolute bottom-0 top-0" style={{ left: `${leftPct}%`, width: `${Math.max(widthPct, 2)}%` }}>
-                      <WaveformPlayer trackId={track.id} audioUrl={track.signedUrl} onReady={handleTrackReady} />
+                      <WaveformPlayer trackId={track.id} audioUrl={track.signedUrl} onReady={handleTrackReady} onDestroy={handleTrackDestroy} />
                     </div>
                   </div>
                 </div>
@@ -988,7 +1023,13 @@ export function TrackPlaybackPanel({ projectId, permissions, tracks, initialComm
           ) : (
             sortedComments.map((comment) => (
               <li key={comment.id} className={`rounded-lg border p-3 ${comment.resolved ? 'border-emerald-500/40 bg-emerald-500/5' : 'border-border bg-background'}`}>
-                <button className="w-full text-left" onClick={() => seekTimeline(comment.timestampSec)}>
+                <button className="w-full text-left" onClick={() => {
+                  if (isPlayingRef.current) {
+                    console.log('[Playback] pause for comment list seek');
+                    setIsPlaying(false);
+                  }
+                  seekTimeline(comment.timestampSec);
+                }}>
                   <div className="flex items-center justify-between gap-2">
                     <p className="font-medium">{comment.authorName}</p>
                     <span className="text-xs text-muted">{formatTime(comment.timestampSec)}</span>
