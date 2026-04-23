@@ -1,7 +1,6 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
-import type WaveSurfer from 'wavesurfer.js';
 import { WaveformPlayer } from '@/components/project/waveform-player';
 import { useToast } from '@/components/ui/toast-provider';
 import { autoSyncStemOffsets, type StemSyncResult } from '@/lib/audio/stem-auto-sync';
@@ -57,9 +56,10 @@ type ProjectVersionItem = {
 };
 
 type TrackRuntime = {
-  waveSurfer: WaveSurfer;
+  audio: HTMLAudioElement;
   durationSec: number;
   isPlaying: boolean;
+  sourceUrl: string;
 };
 
 function formatTime(seconds: number) {
@@ -155,6 +155,66 @@ export function TrackPlaybackPanel({ projectId, permissions, tracks, initialComm
 
   const hasSolo = useMemo(() => Object.values(soloTrackIds).some(Boolean), [soloTrackIds]);
 
+  // Playback engine runtime: one HTMLAudioElement per track.
+  // WaveSurfer instances are not used for transport.
+  useEffect(() => {
+    const nextTrackIds = new Set(trackList.map((track) => track.id));
+
+    Object.keys(runtimeRef.current).forEach((trackId) => {
+      if (nextTrackIds.has(trackId)) return;
+      const runtime = runtimeRef.current[trackId];
+      runtime.audio.pause();
+      runtime.audio.src = '';
+      delete runtimeRef.current[trackId];
+    });
+
+    trackList.forEach((track) => {
+      if (!track.signedUrl) {
+        const runtime = runtimeRef.current[track.id];
+        if (runtime) {
+          runtime.audio.pause();
+          runtime.audio.src = '';
+          delete runtimeRef.current[track.id];
+        }
+        return;
+      }
+
+      const existingRuntime = runtimeRef.current[track.id];
+      if (existingRuntime && existingRuntime.sourceUrl === track.signedUrl) {
+        return;
+      }
+
+      if (existingRuntime) {
+        existingRuntime.audio.pause();
+        existingRuntime.audio.src = '';
+      }
+
+      const audio = new Audio(track.signedUrl);
+      audio.preload = 'auto';
+      audio.crossOrigin = 'anonymous';
+
+      const runtime: TrackRuntime = {
+        audio,
+        durationSec: track.durationSec ?? 0,
+        isPlaying: false,
+        sourceUrl: track.signedUrl
+      };
+
+      const syncMetadata = () => {
+        const nextDuration = Number.isFinite(audio.duration) ? audio.duration : runtime.durationSec;
+        runtime.durationSec = nextDuration || runtime.durationSec;
+      };
+
+      audio.addEventListener('loadedmetadata', syncMetadata);
+      audio.addEventListener('durationchange', syncMetadata);
+      audio.addEventListener('ended', () => {
+        runtime.isPlaying = false;
+      });
+
+      runtimeRef.current[track.id] = runtime;
+    });
+  }, [trackList]);
+
   const sortedComments = useMemo(() => {
     return [...comments].sort((a, b) => a.timestampSec - b.timestampSec);
   }, [comments]);
@@ -165,9 +225,9 @@ export function TrackPlaybackPanel({ projectId, permissions, tracks, initialComm
     console.log(`[Playback] stopAllAudio resetToZero=${resetToZero}`);
     Object.entries(runtimeRef.current).forEach(([trackId, runtime]) => {
       console.log(`[Playback] stop track=${trackId}`);
-      runtime.waveSurfer.pause();
+      runtime.audio.pause();
       if (resetToZero) {
-        runtime.waveSurfer.setTime(0);
+        runtime.audio.currentTime = 0;
       }
       runtime.isPlaying = false;
     });
@@ -190,31 +250,31 @@ export function TrackPlaybackPanel({ projectId, permissions, tracks, initialComm
         const isSoloed = !!soloTrackIds[track.id];
         const shouldBeAudible = hasSolo ? isSoloed : !isMuted;
 
-        runtime.waveSurfer.setMuted(!shouldBeAudible);
-        runtime.waveSurfer.setPlaybackRate(1);
+        runtime.audio.muted = !shouldBeAudible;
+        runtime.audio.playbackRate = 1;
 
+        const trackDuration = runtime.durationSec || track.durationSec || 0;
         const localTime = nextTimelineSec - track.offsetSec;
-        const clampedLocalTime = Math.max(0, Math.min(localTime, runtime.durationSec || 0));
-        const inTrackWindow = localTime >= 0 && localTime < runtime.durationSec;
-        const shouldTrackPlay = shouldPlay && inTrackWindow && shouldBeAudible;
-        const shouldSeek = forceSeek;
+        const clampedLocalTime = Math.max(0, Math.min(localTime, trackDuration));
+        const inTrackWindow = localTime >= 0 && localTime < trackDuration;
+        const shouldTrackPlay = shouldPlay && inTrackWindow;
 
-        if (shouldSeek) {
+        if (forceSeek || (shouldTrackPlay && !runtime.isPlaying)) {
           console.log(`[Playback] seek track=${track.id} time=${clampedLocalTime.toFixed(3)}`);
-          runtime.waveSurfer.setTime(clampedLocalTime);
+          runtime.audio.currentTime = clampedLocalTime;
         }
 
         if (shouldTrackPlay) {
           if (!runtime.isPlaying) {
             console.log(`[Playback] play track=${track.id} time=${clampedLocalTime.toFixed(3)}`);
-            void runtime.waveSurfer.play().catch(() => {
+            void runtime.audio.play().catch(() => {
               // ignore autoplay interruptions in non-interactive situations
             });
             runtime.isPlaying = true;
           }
         } else if (runtime.isPlaying) {
           console.log(`[Playback] pause track=${track.id} time=${clampedLocalTime.toFixed(3)}`);
-          runtime.waveSurfer.pause();
+          runtime.audio.pause();
           runtime.isPlaying = false;
         }
       });
@@ -274,6 +334,7 @@ export function TrackPlaybackPanel({ projectId, permissions, tracks, initialComm
       }
 
       seekTimeline(next, true, false);
+      applyTransportState(next, true, false);
       rafRef.current = requestAnimationFrame(tick);
     };
 
@@ -294,14 +355,15 @@ export function TrackPlaybackPanel({ projectId, permissions, tracks, initialComm
     };
   }, [stopAllAudio]);
 
-  const handleTrackReady = useCallback((trackId: string, value: Omit<TrackRuntime, 'isPlaying'>) => {
-    console.log(`[Playback] ready track=${trackId} duration=${value.durationSec.toFixed(3)}`);
-    runtimeRef.current[trackId] = { ...value, isPlaying: false };
+  const handleTrackReady = useCallback((trackId: string, value: { durationSec: number }) => {
+    const runtime = runtimeRef.current[trackId];
+    if (!runtime) return;
+    runtime.durationSec = value.durationSec;
+    console.log(`[Playback] waveform ready track=${trackId} duration=${value.durationSec.toFixed(3)}`);
   }, []);
 
   const handleTrackDestroy = useCallback((trackId: string) => {
-    console.log(`[Playback] destroy track=${trackId}`);
-    delete runtimeRef.current[trackId];
+    console.log(`[Playback] waveform destroy track=${trackId}`);
   }, []);
 
   const refreshTrackPlaybackUrl = useCallback(
@@ -658,7 +720,7 @@ export function TrackPlaybackPanel({ projectId, permissions, tracks, initialComm
     <div className="grid gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(320px,1fr)]">
       <div className="card p-4">
         <h2 className="text-lg font-medium">Project timeline</h2>
-        <p className="mt-1 text-xs text-muted">Unified waveform playback with offset-aware stem alignment and review notes.</p>
+        <p className="mt-1 text-xs text-muted">Waveform rendering + HTMLAudioElement playback with offset-aware review transport.</p>
         <p className="mt-1 text-xs text-muted">Your role: <span className="font-medium capitalize">{permissions.role}</span>{isEditDisabled ? ' (editing disabled)' : ''}</p>
 
         <div className="mt-4 rounded-lg border border-border bg-background p-3">
