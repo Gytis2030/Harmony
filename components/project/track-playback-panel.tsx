@@ -1,7 +1,6 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
-import { WaveformPlayer } from '@/components/project/waveform-player';
 import { useToast } from '@/components/ui/toast-provider';
 import { autoSyncStemOffsets, type StemSyncResult } from '@/lib/audio/stem-auto-sync';
 import type { ProjectRole } from '@/lib/project-members';
@@ -58,7 +57,6 @@ type ProjectVersionItem = {
 type TrackRuntime = {
   audio: HTMLAudioElement;
   durationSec: number;
-  isPlaying: boolean;
   sourceUrl: string;
 };
 
@@ -90,9 +88,10 @@ export function TrackPlaybackPanel({ projectId, permissions, tracks, initialComm
   const pendingSeekMs = useTimelineStore((state) => state.pendingSeekMs);
   const clearPendingSeek = useTimelineStore((state) => state.clearPendingSeek);
   const runtimeRef = useRef<Record<string, TrackRuntime>>({});
-  const rafRef = useRef<number | null>(null);
+  const uiRafRef = useRef<number | null>(null);
   const startClockRef = useRef<number | null>(null);
   const timelineAtStartRef = useRef(0);
+  const schedulerRef = useRef<Record<string, number[]>>({});
 
   const [timelineSec, setTimelineSec] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -196,7 +195,6 @@ export function TrackPlaybackPanel({ projectId, permissions, tracks, initialComm
       const runtime: TrackRuntime = {
         audio,
         durationSec: track.durationSec ?? 0,
-        isPlaying: false,
         sourceUrl: track.signedUrl
       };
 
@@ -207,10 +205,6 @@ export function TrackPlaybackPanel({ projectId, permissions, tracks, initialComm
 
       audio.addEventListener('loadedmetadata', syncMetadata);
       audio.addEventListener('durationchange', syncMetadata);
-      audio.addEventListener('ended', () => {
-        runtime.isPlaying = false;
-      });
-
       runtimeRef.current[track.id] = runtime;
     });
   }, [trackList]);
@@ -221,65 +215,95 @@ export function TrackPlaybackPanel({ projectId, permissions, tracks, initialComm
 
   const selectedVersion = useMemo(() => versions.find((entry) => entry.id === selectedVersionId) ?? null, [selectedVersionId, versions]);
 
+  const clearPlaybackSchedulers = useCallback(() => {
+    Object.values(schedulerRef.current).forEach((timeouts) => {
+      timeouts.forEach((timeoutId) => window.clearTimeout(timeoutId));
+    });
+    schedulerRef.current = {};
+  }, []);
+
   const stopAllAudio = useCallback((resetToZero = false) => {
-    console.log(`[Playback] stopAllAudio resetToZero=${resetToZero}`);
-    Object.entries(runtimeRef.current).forEach(([trackId, runtime]) => {
-      console.log(`[Playback] stop track=${trackId}`);
+    clearPlaybackSchedulers();
+    Object.values(runtimeRef.current).forEach((runtime) => {
       runtime.audio.pause();
       if (resetToZero) {
         runtime.audio.currentTime = 0;
       }
-      runtime.isPlaying = false;
     });
-  }, []);
+  }, [clearPlaybackSchedulers]);
 
-  /**
-   * Simplified transport model (V1):
-   * - A track is only seeked during explicit transport actions (play start, stop, manual seek).
-   * - We never run continuous seek/drift correction while playing.
-   * - Multi-track playback is intentionally approximate and optimized for stable review behavior.
-   */
-  const applyTransportState = useCallback(
-    (nextTimelineSec: number, shouldPlay: boolean, forceSeek = false) => {
-      console.log(`[Playback] transport timeline=${nextTimelineSec.toFixed(3)} shouldPlay=${shouldPlay} forceSeek=${forceSeek}`);
+  const syncAudioToTimeline = useCallback(
+    (nextTimelineSec: number) => {
       trackList.forEach((track) => {
         const runtime = runtimeRef.current[track.id];
         if (!runtime) return;
 
-        const isMuted = !!mutedTrackIds[track.id];
-        const isSoloed = !!soloTrackIds[track.id];
-        const shouldBeAudible = hasSolo ? isSoloed : !isMuted;
-
-        runtime.audio.muted = !shouldBeAudible;
-        runtime.audio.playbackRate = 1;
-
         const trackDuration = runtime.durationSec || track.durationSec || 0;
         const localTime = nextTimelineSec - track.offsetSec;
         const clampedLocalTime = Math.max(0, Math.min(localTime, trackDuration));
-        const inTrackWindow = localTime >= 0 && localTime < trackDuration;
-        const shouldTrackPlay = shouldPlay && inTrackWindow;
+        runtime.audio.currentTime = clampedLocalTime;
 
-        if (forceSeek || (shouldTrackPlay && !runtime.isPlaying)) {
-          console.log(`[Playback] seek track=${track.id} time=${clampedLocalTime.toFixed(3)}`);
-          runtime.audio.currentTime = clampedLocalTime;
-        }
-
-        if (shouldTrackPlay) {
-          if (!runtime.isPlaying) {
-            console.log(`[Playback] play track=${track.id} time=${clampedLocalTime.toFixed(3)}`);
-            void runtime.audio.play().catch(() => {
-              // ignore autoplay interruptions in non-interactive situations
-            });
-            runtime.isPlaying = true;
-          }
-        } else if (runtime.isPlaying) {
-          console.log(`[Playback] pause track=${track.id} time=${clampedLocalTime.toFixed(3)}`);
-          runtime.audio.pause();
-          runtime.isPlaying = false;
-        }
+        const isMuted = !!mutedTrackIds[track.id];
+        const isSoloed = !!soloTrackIds[track.id];
+        const shouldBeAudible = hasSolo ? isSoloed : !isMuted;
+        runtime.audio.muted = !shouldBeAudible;
       });
     },
     [hasSolo, mutedTrackIds, soloTrackIds, trackList]
+  );
+
+  const startAudioPlayback = useCallback(
+    (fromTimelineSec: number) => {
+      clearPlaybackSchedulers();
+
+      trackList.forEach((track) => {
+        const runtime = runtimeRef.current[track.id];
+        if (!runtime) return;
+
+        const trackDuration = runtime.durationSec || track.durationSec || 0;
+        const timeouts: number[] = [];
+        const localStart = fromTimelineSec - track.offsetSec;
+
+        const isMuted = !!mutedTrackIds[track.id];
+        const isSoloed = !!soloTrackIds[track.id];
+        const shouldBeAudible = hasSolo ? isSoloed : !isMuted;
+        runtime.audio.muted = !shouldBeAudible;
+
+        const playNow = localStart >= 0 && localStart < trackDuration;
+        if (playNow) {
+          runtime.audio.currentTime = localStart;
+          void runtime.audio.play().catch(() => {});
+          const remainingMs = Math.max((trackDuration - localStart) * 1000, 0);
+          timeouts.push(
+            window.setTimeout(() => {
+              runtime.audio.pause();
+            }, remainingMs)
+          );
+        } else if (localStart < 0) {
+          runtime.audio.currentTime = 0;
+          const startDelayMs = Math.max((track.offsetSec - fromTimelineSec) * 1000, 0);
+          timeouts.push(
+            window.setTimeout(() => {
+              runtime.audio.currentTime = 0;
+              void runtime.audio.play().catch(() => {});
+            }, startDelayMs)
+          );
+          if (trackDuration > 0) {
+            timeouts.push(
+              window.setTimeout(() => {
+                runtime.audio.pause();
+              }, startDelayMs + trackDuration * 1000)
+            );
+          }
+        } else {
+          runtime.audio.pause();
+          runtime.audio.currentTime = trackDuration;
+        }
+
+        schedulerRef.current[track.id] = timeouts;
+      });
+    },
+    [clearPlaybackSchedulers, hasSolo, mutedTrackIds, soloTrackIds, trackList]
   );
 
   const seekTimeline = useCallback(
@@ -288,10 +312,14 @@ export function TrackPlaybackPanel({ projectId, permissions, tracks, initialComm
       setTimelineSec(bounded);
       setCursorMs(Math.floor(bounded * 1000));
       if (shouldSyncAudio) {
-        applyTransportState(bounded, shouldPlayOverride ?? isPlayingRef.current, true);
+        if ((shouldPlayOverride ?? isPlayingRef.current) === false) {
+          syncAudioToTimeline(bounded);
+        } else {
+          startAudioPlayback(bounded);
+        }
       }
     },
-    [applyTransportState, projectDurationSec, setCursorMs]
+    [projectDurationSec, setCursorMs, startAudioPlayback, syncAudioToTimeline]
   );
 
   useEffect(() => {
@@ -308,19 +336,18 @@ export function TrackPlaybackPanel({ projectId, permissions, tracks, initialComm
 
   useEffect(() => {
     if (!isPlaying) {
-      console.log('[Playback] global pause');
       stopAllAudio(false);
-      if (rafRef.current) {
-        cancelAnimationFrame(rafRef.current);
-        rafRef.current = null;
+      if (uiRafRef.current) {
+        cancelAnimationFrame(uiRafRef.current);
+        uiRafRef.current = null;
       }
       startClockRef.current = null;
       return;
     }
 
-    console.log('[Playback] global play');
     timelineAtStartRef.current = timelineSec;
     startClockRef.current = performance.now();
+    startAudioPlayback(timelineSec);
 
     const tick = () => {
       if (startClockRef.current == null) return;
@@ -334,20 +361,18 @@ export function TrackPlaybackPanel({ projectId, permissions, tracks, initialComm
       }
 
       seekTimeline(next, true, false);
-      applyTransportState(next, true, false);
-      rafRef.current = requestAnimationFrame(tick);
+      uiRafRef.current = requestAnimationFrame(tick);
     };
 
-    applyTransportState(timelineSec, true, true);
-    rafRef.current = requestAnimationFrame(tick);
+    uiRafRef.current = requestAnimationFrame(tick);
 
     return () => {
-      if (rafRef.current) {
-        cancelAnimationFrame(rafRef.current);
-        rafRef.current = null;
+      if (uiRafRef.current) {
+        cancelAnimationFrame(uiRafRef.current);
+        uiRafRef.current = null;
       }
     };
-  }, [applyTransportState, isPlaying, projectDurationSec, seekTimeline, stopAllAudio, timelineSec]);
+  }, [isPlaying, projectDurationSec, seekTimeline, startAudioPlayback, stopAllAudio, timelineSec]);
 
   useEffect(() => {
     return () => {
@@ -355,16 +380,16 @@ export function TrackPlaybackPanel({ projectId, permissions, tracks, initialComm
     };
   }, [stopAllAudio]);
 
-  const handleTrackReady = useCallback((trackId: string, value: { durationSec: number }) => {
-    const runtime = runtimeRef.current[trackId];
-    if (!runtime) return;
-    runtime.durationSec = value.durationSec;
-    console.log(`[Playback] waveform ready track=${trackId} duration=${value.durationSec.toFixed(3)}`);
-  }, []);
-
-  const handleTrackDestroy = useCallback((trackId: string) => {
-    console.log(`[Playback] waveform destroy track=${trackId}`);
-  }, []);
+  useEffect(() => {
+    trackList.forEach((track) => {
+      const runtime = runtimeRef.current[track.id];
+      if (!runtime) return;
+      const isMuted = !!mutedTrackIds[track.id];
+      const isSoloed = !!soloTrackIds[track.id];
+      const shouldBeAudible = hasSolo ? isSoloed : !isMuted;
+      runtime.audio.muted = !shouldBeAudible;
+    });
+  }, [hasSolo, mutedTrackIds, soloTrackIds, trackList]);
 
   const refreshTrackPlaybackUrl = useCallback(
     async (trackId: string) => {
@@ -720,7 +745,7 @@ export function TrackPlaybackPanel({ projectId, permissions, tracks, initialComm
     <div className="grid gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(320px,1fr)]">
       <div className="card p-4">
         <h2 className="text-lg font-medium">Project timeline</h2>
-        <p className="mt-1 text-xs text-muted">Waveform rendering + HTMLAudioElement playback with offset-aware review transport.</p>
+        <p className="mt-1 text-xs text-muted">Stability-first HTMLAudioElement playback transport with simple timeline review.</p>
         <p className="mt-1 text-xs text-muted">Your role: <span className="font-medium capitalize">{permissions.role}</span>{isEditDisabled ? ' (editing disabled)' : ''}</p>
 
         <div className="mt-4 rounded-lg border border-border bg-background p-3">
@@ -934,10 +959,7 @@ export function TrackPlaybackPanel({ projectId, permissions, tracks, initialComm
                   </div>
                   {offsetErrorByTrack[track.id] ? <p className="mb-2 text-xs text-red-500">{offsetErrorByTrack[track.id]}</p> : null}
 
-                  <div
-                    className="relative h-20 overflow-hidden rounded border border-border bg-background/60"
-                    onClick={(event) => handleTimelineClick(event, Math.max(projectDurationSec, 0.001))}
-                  >
+                  <div className="relative h-20 overflow-hidden rounded border border-border bg-background/60" onClick={(event) => handleTimelineClick(event, Math.max(projectDurationSec, 0.001))}>
                     <div className="absolute bottom-0 top-0 w-0.5 bg-brand" style={{ left: `${playheadPct}%` }} />
                     {sortedComments.map((comment) => {
                       if (comment.trackId && comment.trackId !== track.id) return null;
@@ -958,8 +980,8 @@ export function TrackPlaybackPanel({ projectId, permissions, tracks, initialComm
                         />
                       );
                     })}
-                    <div className="absolute bottom-0 top-0" style={{ left: `${leftPct}%`, width: `${Math.max(widthPct, 2)}%` }}>
-                      <WaveformPlayer trackId={track.id} audioUrl={track.signedUrl} onReady={handleTrackReady} onDestroy={handleTrackDestroy} />
+                    <div className="absolute bottom-0 top-0 rounded-sm bg-brand/20" style={{ left: `${leftPct}%`, width: `${Math.max(widthPct, 2)}%` }}>
+                      <div className="flex h-full items-center justify-center text-[10px] text-muted">Waveform hidden for stable playback</div>
                     </div>
                   </div>
                 </div>
