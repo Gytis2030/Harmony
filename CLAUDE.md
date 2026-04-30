@@ -96,6 +96,7 @@ pnpm typecheck        # tsc --noEmit
 - **`@clerk/nextjs` v6+ requires Next.js 15+** — pin to `@clerk/nextjs@^5` for this project.
 - **`Geist` is not exported by `next/font/google` in Next.js 14** — do not import it. shadcn init adds it automatically but it breaks typecheck. Remove it from `layout.tsx`.
 - **drizzle-kit CLI does not auto-load `.env.local`** — `drizzle.config.ts` must call `dotenv.config({ path: '.env.local' })` explicitly at the top.
+- **`pnpm dlx shadcn@latest init` picks "base-nova" style (Tailwind v4 only)** — always add `--defaults` or verify `components.json` says `"style": "default"` after init. "base-nova" installs `@base-ui/react`, `shadcn`, `tw-animate-css`, and generates `oklch()` CSS variables — all incompatible with Tailwind v3. Fix: remove those three packages, add `@radix-ui/react-slot`, rewrite `globals.css` with `@tailwind` directives and HSL variables, extend `tailwind.config.ts` with shadcn colour tokens.
 
 ---
 
