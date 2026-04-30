@@ -6,7 +6,7 @@ if (!process.env.DATABASE_URL) {
   throw new Error('DATABASE_URL is not set.')
 }
 
-// max: 1 — each Vercel serverless invocation gets one connection from the pool
-const client = postgres(process.env.DATABASE_URL, { max: 1 })
+// max:1 — one connection per serverless invocation; idle_timeout/max_lifetime prevent stale PgBouncer connections
+const client = postgres(process.env.DATABASE_URL, { max: 1, idle_timeout: 20, max_lifetime: 1800 })
 
 export const db = drizzle(client, { schema })
