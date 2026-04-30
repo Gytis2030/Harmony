@@ -92,7 +92,10 @@ pnpm typecheck        # tsc --noEmit
 
 (Add to this list whenever a misstep happens. It's the highest-leverage section in this file.)
 
-- _(empty — to be populated as we go)_
+- **next.config.ts is not supported in Next.js 14** — use `next.config.mjs`. The `.ts` extension only works in Next.js 15+.
+- **`@clerk/nextjs` v6+ requires Next.js 15+** — pin to `@clerk/nextjs@^5` for this project.
+- **`Geist` is not exported by `next/font/google` in Next.js 14** — do not import it. shadcn init adds it automatically but it breaks typecheck. Remove it from `layout.tsx`.
+- **drizzle-kit CLI does not auto-load `.env.local`** — `drizzle.config.ts` must call `dotenv.config({ path: '.env.local' })` explicitly at the top.
 
 ---
 
