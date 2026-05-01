@@ -22,6 +22,42 @@ Decisions go newest-first.
 
 ---
 
+## 2026-05-01 — Orphaned R2 objects tolerated in V1; cleanup deferred
+
+**Context.** If the browser PUT to R2 succeeds but the subsequent `addTrack` Server Action fails (network drop, DB error, etc.), R2 holds an object with no corresponding `audio_files` row.
+
+**Decision.** Tolerate orphans for V1. The `UploadWidget` catches the Server Action error and shows an error banner with a retry button. We do not attempt server-side cleanup.
+
+**Alternatives considered.** Two-phase approach: write a pending row before signing, then mark it complete after the action runs. Rejected for V1 — adds complexity and a cleanup cron before we know how often this actually occurs.
+
+**Trade-offs / consequences.** Orphaned objects accumulate over time. Mitigation for V2: a periodic job that lists R2 keys, diffs against `audio_files`, and deletes orphans older than 24 hours.
+
+---
+
+## 2026-05-01 — XHR for audio upload progress; `projectId` required by sign route
+
+**Context.** Phase 3 adds direct-to-R2 uploads. Two small decisions needed documenting.
+
+**Decision.** (1) Use `XMLHttpRequest` for the browser PUT rather than `fetch` — `fetch` has no upload progress API in current browsers. (2) The `POST /api/uploads/sign` route accepts `projectId` in the body (beyond the spec's filename + type + size) to namespace R2 keys by project and to gate the request against workspace membership.
+
+**Alternatives considered.** (1) `fetch` + `ReadableStream` — theoretically possible but lacks cross-browser upload progress support. (2) Omitting `projectId` from the sign route — would require a separate membership check later and produces flat R2 key names that are harder to lifecycle-manage.
+
+**Trade-offs / consequences.** XHR is legacy API but stable and universally supported. If browser upload progress via Streams matures, this can be swapped without touching the route or action. Adding `projectId` to the sign route means the client must know the project ID before signing — acceptable since the upload widget is always rendered inside a project page.
+
+---
+
+## 2026-05-01 — R2 CORS must be configured manually in the Cloudflare dashboard
+
+**Context.** Browser PUTs to R2 require appropriate CORS headers; there is no IaC or CLI path for R2 CORS in V1.
+
+**Decision.** Document the required CORS policy (PUT + GET, Content-Type + Content-Length headers, allowed origins) and configure it manually in the Cloudflare dashboard once per environment. No code change needed.
+
+**Alternatives considered.** Cloudflare Wrangler CLI (`wrangler r2 bucket cors put`) — available but adds a Wrangler dependency and CI step before we have CI-driven deployments. Deferred to V2.
+
+**Trade-offs / consequences.** Onboarding a new developer requires a manual step that isn't captured in code. Mitigated by documenting it in SETUP.md and in the verification checklist.
+
+---
+
 ## 2026-05-01 — Webhook handler uses a class-field spy, not a `vi.fn()` constructor mock
 
 **Context.** Writing tests for the Clerk webhook handler required mocking `new Webhook(secret).verify(...)`. In Vitest 4.x, `vi.fn().mockReturnValue(obj)` does not propagate through `new` as it does in Jest — the `new` expression returns a fresh object, not `obj`.

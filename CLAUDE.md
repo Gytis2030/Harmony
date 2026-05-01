@@ -98,6 +98,8 @@ pnpm typecheck        # tsc --noEmit
 - **drizzle-kit CLI does not auto-load `.env.local`** — `drizzle.config.ts` must call `dotenv.config({ path: '.env.local' })` explicitly at the top.
 - **`pnpm dlx shadcn@latest init` picks "base-nova" style (Tailwind v4 only)** — always add `--defaults` or verify `components.json` says `"style": "default"` after init. "base-nova" installs `@base-ui/react`, `shadcn`, `tw-animate-css`, and generates `oklch()` CSS variables — all incompatible with Tailwind v3. Fix: remove those three packages, add `@radix-ui/react-slot`, rewrite `globals.css` with `@tailwind` directives and HSL variables, extend `tailwind.config.ts` with shadcn colour tokens.
 - **In `@clerk/nextjs` v5, `auth` inside `clerkMiddleware` is a function, not an object** — the correct call is `auth().protect()`, not `auth.protect()`. The object form (`auth.protect`) only exists in v6+, which requires Next.js 15. Always verify against the installed minor before changing this.
+- Drizzle's lib/db/migrations/ and other auto-generated artifacts must be in .prettierignore — otherwise lint-staged formats them on every commit and occasionally trips a stash/restore collision that leaves files renamed with " 2" suffixes.
+- Clerk's User API Keys feature is enabled by default — toggle off in Clerk Dashboard → Configure → User & authentication unless you actually want end users generating personal API tokens.
 
 ---
 
