@@ -22,6 +22,42 @@ Decisions go newest-first.
 
 ---
 
+## 2026-05-01 — Webhook handler uses a class-field spy, not a `vi.fn()` constructor mock
+
+**Context.** Writing tests for the Clerk webhook handler required mocking `new Webhook(secret).verify(...)`. In Vitest 4.x, `vi.fn().mockReturnValue(obj)` does not propagate through `new` as it does in Jest — the `new` expression returns a fresh object, not `obj`.
+
+**Decision.** Mock `svix` with a real `class MockWebhook` (via `vi.mock()` factory) whose `verify` field is a `vi.hoisted()` spy. Every instance shares the same spy, which tests can control via `svixVerify.mockReturnValue(...)`.
+
+**Alternatives considered.** `mockImplementation(function() { return obj })` (regular function) — also works but requires casting `as never` on the implementation argument. The class approach is cleaner and matches Vitest's own documented pattern for class mocks.
+
+**Trade-offs / consequences.** All test instances of `Webhook` share a single `verify` spy. Tests must `vi.clearAllMocks()` between runs (already done in `beforeEach`). Adding more instance methods in future would require adding them to `MockWebhook`.
+
+---
+
+## 2026-05-01 — V1 schema: 7 tables, internal UUID PK separate from clerk_id
+
+**Context.** Phase 2 needed a real database schema to replace the Phase 1 `health_check` placeholder.
+
+**Decision.** Seven tables: `users`, `workspaces`, `workspace_members`, `projects`, `tracks`, `audio_files`, `comments`, `project_versions`. Each user-facing entity uses an internal UUID primary key. The `users` table has a separate `clerk_id` column (unique, indexed) that maps to Clerk's user ID.
+
+**Alternatives considered.** Using `clerk_id` directly as the PK — simpler but couples every FK to Clerk's ID format and makes joins slower (string vs UUID).
+
+**Trade-offs / consequences.** One extra lookup when translating Clerk IDs to internal IDs (e.g., in the webhook handler). The escape hatch for switching auth providers is straightforward: update `clerk_id` to point to the new provider's user ID without touching any FKs.
+
+---
+
+## 2026-05-01 — Webhook auto-creates personal workspace on user.created
+
+**Context.** When a user signs up via Clerk, the `user.created` webhook fires. The dashboard would be empty without a default workspace.
+
+**Decision.** The webhook handler wraps user + workspace + workspace_member creation in a single Drizzle transaction. If the user insert returns 0 rows (conflict on `clerk_id` = replay), the handler returns early without creating a workspace — making it safe for Clerk's automatic webhook replays.
+
+**Alternatives considered.** Defer workspace creation to an explicit UI action. Rejected for V1 because an empty dashboard on first login is confusing.
+
+**Trade-offs / consequences.** Every new user automatically gets a "My Projects" workspace. In V2, if we add organization workspaces at signup, we'll need to decide whether to also create the personal workspace or skip it.
+
+---
+
 ## 2026-04-29 — Supabase Postgres instead of Neon
 
 **Context.** The owner already has a Supabase account. Original plan used Neon, but we want to minimize the number of vendor accounts to manage during V1.

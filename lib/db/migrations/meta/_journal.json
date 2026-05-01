@@ -8,6 +8,13 @@
       "when": 1777555778183,
       "tag": "0000_cultured_senator_kelly",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1777635678336,
+      "tag": "0001_stiff_kulan_gath",
+      "breakpoints": true
     }
   ]
 }
