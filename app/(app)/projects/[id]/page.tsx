@@ -1,4 +1,5 @@
 import { auth } from '@clerk/nextjs/server'
+import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
 import { getUserByClerkId } from '@/lib/db/queries/users'
 import { getProjectById } from '@/lib/db/queries/projects'
@@ -23,6 +24,12 @@ export default async function ProjectEditorPage({ params }: Props) {
 
   return (
     <main className="mx-auto max-w-3xl px-4 py-10">
+      <Link
+        href="/dashboard"
+        className="mb-4 inline-flex items-center text-sm text-gray-400 hover:text-gray-700"
+      >
+        ← Back to Dashboard
+      </Link>
       <h1 className="mb-6 text-2xl font-semibold">{project.name}</h1>
 
       <section>

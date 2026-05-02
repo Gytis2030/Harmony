@@ -1,5 +1,7 @@
 'use client'
+import Link from 'next/link'
 import { SignedIn, SignedOut, SignInButton, SignUpButton, UserButton } from '@clerk/nextjs'
+import { Button } from '@/components/ui/button'
 
 export default function AuthNav() {
   return (
@@ -15,6 +17,9 @@ export default function AuthNav() {
         </SignUpButton>
       </SignedOut>
       <SignedIn>
+        <Button asChild size="sm" variant="outline">
+          <Link href="/dashboard">Go to Dashboard</Link>
+        </Button>
         <UserButton afterSignOutUrl="/" />
       </SignedIn>
     </div>

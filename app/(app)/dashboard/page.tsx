@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation'
 import { getUserByClerkId } from '@/lib/db/queries/users'
 import { getProjectsForUser } from '@/lib/db/queries/projects'
 import { CreateProjectDialog } from '@/components/editor/CreateProjectDialog'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 
 export default async function DashboardPage() {
   const { userId: clerkId } = auth()
@@ -27,21 +28,22 @@ export default async function DashboardPage() {
           <CreateProjectDialog label="Create your first project" />
         </div>
       ) : (
-        <ul className="mt-6 divide-y divide-gray-200 rounded-lg border border-gray-200">
+        <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {projects.map((project) => (
-            <li key={project.id}>
-              <Link
-                href={`/projects/${project.id}`}
-                className="flex items-center justify-between px-4 py-3 hover:bg-gray-50"
-              >
-                <span className="font-medium">{project.name}</span>
-                <span className="text-sm text-gray-400">
-                  {new Date(project.updatedAt).toLocaleDateString()}
-                </span>
-              </Link>
-            </li>
+            <Link key={project.id} href={`/projects/${project.id}`}>
+              <Card className="transition-shadow hover:shadow-md">
+                <CardHeader>
+                  <CardTitle className="text-base">{project.name}</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-sm text-gray-400">
+                    Created {new Date(project.createdAt).toLocaleDateString()}
+                  </p>
+                </CardContent>
+              </Card>
+            </Link>
           ))}
-        </ul>
+        </div>
       )}
     </main>
   )
