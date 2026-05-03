@@ -357,4 +357,39 @@ describe('AudioEngine', () => {
     // A should still be at its full gain
     expect(internals()._trackGains.get(TRACK_A)!.gain.value).toBe(1.0)
   })
+
+  // Test 13 — unloadAllTracks() resets session state but preserves buffer cache
+  it('unloadAllTracks() clears per-track state and stops playback, preserves buffers', () => {
+    const TRACK_A = 'ul-a',
+      FILE_A = 'ul-file-a'
+    const TRACK_B = 'ul-b',
+      FILE_B = 'ul-file-b'
+    internals()._trackToFile.set(TRACK_A, FILE_A)
+    internals()._trackToFile.set(TRACK_B, FILE_B)
+    internals()._bufferCache.set(FILE_A, makeBuffer(48000, 30))
+    internals()._bufferCache.set(FILE_B, makeBuffer(48000, 30))
+    audioEngine.setVolume(TRACK_A, 0.7)
+    audioEngine.setMuted(TRACK_B, true)
+    audioEngine.setSoloed(TRACK_A, true)
+    audioEngine.play()
+    expect(audioEngine.state).toBe('playing')
+
+    audioEngine.unloadAllTracks()
+
+    expect(audioEngine.state).toBe('idle')
+    expect(internals()._activeSources.size).toBe(0)
+    expect(internals()._trackToFile.size).toBe(0)
+    expect(internals()._trackMuted.size).toBe(0)
+    expect(internals()._trackVolumes.size).toBe(0)
+    expect(internals()._soloedTracks.size).toBe(0)
+    // Buffer cache must be intact for fast re-navigation
+    expect(internals()._bufferCache.size).toBe(2)
+  })
+
+  // Test 14 — state getter is synchronous (validates the lazy useState initializer pattern)
+  it('audioEngine.state getter returns current state without subscribing', () => {
+    expect(audioEngine.state).toBe('idle')
+    ;(internals() as unknown as { _state: string })._state = 'paused'
+    expect(audioEngine.state).toBe('paused')
+  })
 })

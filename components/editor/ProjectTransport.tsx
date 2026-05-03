@@ -11,15 +11,22 @@ function formatTime(seconds: number): string {
 }
 
 export default function ProjectTransport() {
-  const [engineState, setEngineState] = useState<EngineState>('idle')
+  // Lazy initializer reads real engine state on first render — prevents stale
+  // button state when the component remounts mid-session.
+  const [engineState, setEngineState] = useState<EngineState>(() => audioEngine.state)
   const [masterVolume, setMasterVolume] = useState(1)
 
   const positionSpanRef = useRef<HTMLSpanElement>(null)
   const rafRef = useRef<number>(0)
 
-  // Mirror engine state for button rendering
+  // Subscribe to engine state updates; stop and clear per-track state on unmount
+  // so audio doesn't keep playing after navigation and re-mount starts fresh.
   useEffect(() => {
-    return audioEngine.subscribe(setEngineState)
+    const unsub = audioEngine.subscribe(setEngineState)
+    return () => {
+      unsub()
+      audioEngine.unloadAllTracks()
+    }
   }, [])
 
   // RAF loop: update position display directly in the DOM to avoid re-rendering

@@ -275,6 +275,21 @@ class AudioEngine {
     }
     this._recomputeGains()
   }
+
+  // ── Session teardown ──────────────────────────────────────────────────────
+  //
+  // Called when the project page unmounts. Stops playback, discards all
+  // per-track state so re-navigation re-registers tracks cleanly, but keeps
+  // _bufferCache intact so re-decoding is skipped on fast re-navigation.
+
+  unloadAllTracks(): void {
+    this.stop()
+    this._trackToFile.clear()
+    this._trackMuted.clear()
+    this._trackVolumes.clear()
+    this._soloedTracks.clear()
+    this._trackGains.clear()
+  }
 }
 
 export const audioEngine = new AudioEngine()
