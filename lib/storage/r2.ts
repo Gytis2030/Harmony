@@ -1,4 +1,4 @@
-import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3'
+import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 
 function getR2Client() {
@@ -31,6 +31,19 @@ export async function createPresignedPutUrl(params: {
     Key: params.key,
     ContentType: params.contentType,
     ContentLength: params.sizeBytes,
+  })
+
+  return getSignedUrl(client, command, { expiresIn: 300 })
+}
+
+export async function createPresignedGetUrl(params: { key: string }): Promise<string> {
+  const bucket = process.env.R2_BUCKET_NAME
+  if (!bucket) throw new Error('R2_BUCKET_NAME is not configured.')
+
+  const client = getR2Client()
+  const command = new GetObjectCommand({
+    Bucket: bucket,
+    Key: params.key,
   })
 
   return getSignedUrl(client, command, { expiresIn: 300 })

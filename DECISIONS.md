@@ -22,6 +22,28 @@ Decisions go newest-first.
 
 ---
 
+## 2026-05-02 — Safari ignores AudioContext sampleRate option; resample is the common case
+
+**Context.** Safari does not honour `{ sampleRate: 48000 }` in the `AudioContext`
+constructor and instead uses the system's hardware rate (typically 44100Hz or 48000Hz
+depending on the device). The `AudioEngine.loadTrack` method normalises every decoded
+buffer to 48000Hz via `OfflineAudioContext` before caching, so playback is consistent
+regardless of what rate Safari chose.
+
+**Decision.** Accept this behaviour. Do not attempt to detect or work around it. The
+resample path already handles it uniformly.
+
+**Alternatives considered.** Detecting `ctx.sampleRate !== 48000` post-construction and
+warning the user. Rejected — it adds UI complexity for a situation that is silently
+handled correctly by the resample path.
+
+**Trade-offs / consequences.** In Safari, every first load resamples through
+`OfflineAudioContext`. At typical stem lengths (30s–5min) this is fast enough to be
+imperceptible. If profiling shows otherwise, caching resampled buffers to IndexedDB is
+the escape hatch for V2.
+
+---
+
 ## 2026-05-01 — Orphaned R2 objects tolerated in V1; cleanup deferred
 
 **Context.** If the browser PUT to R2 succeeds but the subsequent `addTrack` Server Action fails (network drop, DB error, etc.), R2 holds an object with no corresponding `audio_files` row.

@@ -1,3 +1,7 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
 # Harmony
 
 > Real-time collaboration for music producers. Multi-track timeline, synchronized playback, presence, comments, version history. Think "Google Docs for stem-based music projects."
@@ -16,6 +20,13 @@ The human owner has no prior software engineering experience and is learning by 
 - After implementing something non-trivial, leave a short comment in the code or a note in `DECISIONS.md` so the human can skim later.
 
 If a request is vague ("add comments"), ask one clarifying question before coding. Do not guess silently.
+
+---
+
+## Positioning
+
+- Harmony is a collaborative DAW that enables producers, studios, and artists to work on tracks simultaneously, while also saving version histories and allowing comments.
+- The specific user segment that the V1 launch is aimed at is solo-producers.
 
 ---
 
@@ -41,15 +52,19 @@ When suggesting a new dependency, check it's still maintained and justify the ad
 
 ```
 app/                    Next.js App Router routes
-  (marketing)/          Public pages
-  (app)/                Authenticated pages
+  (marketing)/          Public pages (no auth required)
+  (app)/                Authenticated pages — middleware enforces auth
+    dashboard/          Project list
     projects/[id]/      Project editor
-  api/                  API routes (signed URLs, webhooks, etc.)
+  api/                  API routes (signed URLs, webhooks)
+  sign-in/[[...sign-in]]/ sign-up/[[...sign-up]]/   Clerk catch-all auth pages
 components/
   ui/                   shadcn primitives — do not edit
   timeline/             Timeline + track rows + playhead
   editor/               Project editor shell, toolbars, panels
+  marketing/            Marketing-only components (AuthNav, etc.)
 lib/
+  actions/              Server Actions called from client components
   db/                   Drizzle schema, migrations, query helpers
   audio/                Web Audio scheduling, mixing, AudioContext singleton
   realtime/             Yjs document model, Liveblocks bindings
@@ -63,11 +78,35 @@ Keep route handlers thin. Business logic lives in `lib/`.
 
 ---
 
+## Key patterns
+
+**Auth translation** — every server component and Server Action must translate Clerk's ephemeral `clerkId` to our internal UUID before doing any DB work:
+
+```ts
+const { userId: clerkId } = auth()
+if (!clerkId) redirect('/sign-in')
+const user = await getUserByClerkId(clerkId) // lib/db/queries/users.ts
+```
+
+**Access control** — authorization is always enforced by joining through `workspace_members`. Never trust a raw project/track ID without verifying the caller is a member of the owning workspace. See `lib/db/queries/projects.ts` (`getProjectById`) for the canonical pattern.
+
+**Audio upload flow** (3 steps, all in `UploadWidget`):
+
+1. `POST /api/uploads/sign` → returns a presigned PUT URL + R2 key (also validates membership).
+2. Browser PUTs file directly to R2 via `XMLHttpRequest` (not `fetch` — XHR is used for upload progress events).
+3. `addTrack` Server Action writes `tracks` + `audio_files` rows to DB. If step 3 fails, the R2 object becomes an orphan (tolerated in V1; see DECISIONS.md).
+
+**Clerk webhook** — `POST /api/webhooks/clerk` handles `user.created` (creates user row + personal "My Projects" workspace in a single transaction) and `user.updated`. The handler is idempotent: if the user row already exists it returns early, so Clerk retries are safe.
+
+**`@` path alias** — resolves to the project root (not `src/`). Import as `@/lib/...`, `@/components/...`, etc.
+
+---
+
 ## Conventions
 
 - File names: `kebab-case.ts` for modules, `PascalCase.tsx` for React components.
 - Components: function components only, default export at bottom of file.
-- Server actions over API routes when the caller is our own UI.
+- Server Actions over API routes when the caller is our own UI. Actions live in `lib/actions/`, not `app/`.
 - Never use `any`. If a type is genuinely unknown, use `unknown` and narrow.
 - Throw typed errors from `lib/`; catch and translate at the route boundary.
 - Audio code lives behind a single `AudioEngine` interface so we can swap implementations.
@@ -78,12 +117,16 @@ Keep route handlers thin. Business logic lives in `lib/`.
 
 ```
 pnpm dev              # local dev server
-pnpm db:push          # apply Drizzle schema to dev DB
-pnpm db:studio        # browse the dev DB
-pnpm test             # Vitest
-pnpm test:e2e         # Playwright
+pnpm build            # production build (requires all env vars)
 pnpm lint             # ESLint
 pnpm typecheck        # tsc --noEmit
+pnpm test             # Vitest (all tests)
+pnpm vitest run tests/path/to/test.ts   # single test file
+pnpm test:e2e         # Playwright
+pnpm db:push          # push Drizzle schema changes to dev DB (no migration file)
+pnpm db:generate      # generate a migration SQL file from schema diff
+pnpm db:migrate       # apply pending migration files to the DB
+pnpm db:studio        # browse the dev DB
 ```
 
 ---

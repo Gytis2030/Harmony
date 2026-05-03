@@ -5,6 +5,7 @@ import { getUserByClerkId } from '@/lib/db/queries/users'
 import { getProjectById } from '@/lib/db/queries/projects'
 import { getTracksForProject } from '@/lib/db/queries/tracks'
 import { UploadWidget } from '@/components/editor/UploadWidget'
+import TrackPlayer from '@/components/editor/TrackPlayer'
 
 interface Props {
   params: { id: string }
@@ -48,6 +49,14 @@ export default async function ProjectEditorPage({ params }: Props) {
               </li>
             ))}
           </ul>
+        )}
+
+        {tracks[0]?.audioFile && (
+          <TrackPlayer
+            trackId={tracks[0].id}
+            audioFileId={tracks[0].audioFile.id}
+            trackName={tracks[0].name}
+          />
         )}
 
         <UploadWidget projectId={params.id} />
