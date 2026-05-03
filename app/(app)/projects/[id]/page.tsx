@@ -5,7 +5,8 @@ import { getUserByClerkId } from '@/lib/db/queries/users'
 import { getProjectById } from '@/lib/db/queries/projects'
 import { getTracksForProject } from '@/lib/db/queries/tracks'
 import { UploadWidget } from '@/components/editor/UploadWidget'
-import TrackPlayer from '@/components/editor/TrackPlayer'
+import ProjectTransport from '@/components/editor/ProjectTransport'
+import TrackRow from '@/components/editor/TrackRow'
 
 interface Props {
   params: { id: string }
@@ -23,6 +24,10 @@ export default async function ProjectEditorPage({ params }: Props) {
 
   const tracks = await getTracksForProject(params.id)
 
+  const audioTracks = tracks.flatMap((t) =>
+    t.audioFile ? [{ trackId: t.id, audioFileId: t.audioFile.id, name: t.name }] : []
+  )
+
   return (
     <main className="mx-auto max-w-3xl px-4 py-10">
       <Link
@@ -39,24 +44,30 @@ export default async function ProjectEditorPage({ params }: Props) {
         {tracks.length === 0 ? (
           <p className="mb-6 text-sm text-gray-400">No tracks yet. Upload an audio file below.</p>
         ) : (
-          <ul className="mb-6 divide-y divide-gray-200 rounded-lg border border-gray-200">
-            {tracks.map((track) => (
-              <li key={track.id} className="flex items-center gap-3 px-4 py-3">
-                <span className="flex-1 font-medium">{track.name}</span>
-                {track.audioFile && (
-                  <span className="text-xs text-gray-400">{track.audioFile.mimeType}</span>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
+          <>
+            {audioTracks.length > 0 && <ProjectTransport />}
 
-        {tracks[0]?.audioFile && (
-          <TrackPlayer
-            trackId={tracks[0].id}
-            audioFileId={tracks[0].audioFile.id}
-            trackName={tracks[0].name}
-          />
+            <div className="mb-6 flex flex-col gap-2">
+              {tracks.map((track) =>
+                track.audioFile ? (
+                  <TrackRow
+                    key={track.id}
+                    trackId={track.id}
+                    audioFileId={track.audioFile.id}
+                    trackName={track.name}
+                  />
+                ) : (
+                  <div
+                    key={track.id}
+                    className="flex items-center gap-3 rounded-lg border border-gray-200 px-4 py-3"
+                  >
+                    <span className="font-medium">{track.name}</span>
+                    <span className="ml-auto text-xs text-gray-400">No audio file</span>
+                  </div>
+                )
+              )}
+            </div>
+          </>
         )}
 
         <UploadWidget projectId={params.id} />

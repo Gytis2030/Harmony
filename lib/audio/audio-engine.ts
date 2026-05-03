@@ -9,12 +9,22 @@ class AudioEngine {
   private _bufferCache: Map<string, AudioBuffer> = new Map()
   private _trackGains: Map<string, GainNode> = new Map()
   private _activeSources: Map<string, AudioBufferSourceNode> = new Map()
-  private _volumeBeforeMute: Map<string, number> = new Map()
+
+  // Per-track mix state — explicit booleans so _recomputeGains() has the full picture
+  private _trackVolumes: Map<string, number> = new Map()
+  private _trackMuted: Map<string, boolean> = new Map()
+  private _soloedTracks: Set<string> = new Set()
+
+  // trackId → audioFileId; populated by loadTrack(); drives multi-track play()
+  private _trackToFile: Map<string, string> = new Map()
+
+  // Tracks how many decodes are in-flight so concurrent loads don't prematurely
+  // flip state back to 'idle' while another file is still being decoded.
+  private _loadingSet: Set<string> = new Set()
 
   private _masterGain: GainNode | null = null
   private _startedAt = 0
   private _pausedOffset = 0
-  private _activeTrackId: string | null = null
 
   // ── Subscription ──────────────────────────────────────────────────────────
 
@@ -41,6 +51,20 @@ class AudioEngine {
     return this._pausedOffset
   }
 
+  // ── Loaded track IDs ──────────────────────────────────────────────────────
+
+  loadedTrackIds(): string[] {
+    return Array.from(this._trackToFile.keys()).filter((id) =>
+      this._bufferCache.has(this._trackToFile.get(id)!)
+    )
+  }
+
+  getTrackDuration(trackId: string): number {
+    const audioFileId = this._trackToFile.get(trackId)
+    if (!audioFileId) return 0
+    return this._bufferCache.get(audioFileId)?.duration ?? 0
+  }
+
   // ── Master gain (lazy) ────────────────────────────────────────────────────
 
   private _getMasterGain(): GainNode {
@@ -50,6 +74,10 @@ class AudioEngine {
       this._masterGain.connect(ctx.destination)
     }
     return this._masterGain
+  }
+
+  setMasterVolume(value: number): void {
+    this._getMasterGain().gain.value = value
   }
 
   // ── Per-track gain (lazy) ─────────────────────────────────────────────────
@@ -64,139 +92,188 @@ class AudioEngine {
     return this._trackGains.get(trackId)!
   }
 
+  // ── Gain recompute ────────────────────────────────────────────────────────
+  //
+  // Called after any change to volumes, mutes, or solos — and also after a new
+  // track finishes loading so a track buffered mid-session (when solo is already
+  // active) gets the correct initial gain rather than defaulting to full volume.
+
+  private _recomputeGains(): void {
+    const hasSolo = this._soloedTracks.size > 0
+    for (const trackId of this._trackToFile.keys()) {
+      const gain = this._getTrackGain(trackId)
+      const muted = this._trackMuted.get(trackId) ?? false
+      const volume = this._trackVolumes.get(trackId) ?? 1.0
+      if (hasSolo && !this._soloedTracks.has(trackId)) {
+        gain.gain.value = 0
+      } else if (muted) {
+        gain.gain.value = 0
+      } else {
+        gain.gain.value = volume
+      }
+    }
+  }
+
   // ── Load & decode ─────────────────────────────────────────────────────────
 
-  async loadTrack(audioFileId: string, signedUrl: string): Promise<AudioBuffer> {
+  async loadTrack(trackId: string, audioFileId: string, signedUrl: string): Promise<AudioBuffer> {
+    this._trackToFile.set(trackId, audioFileId)
+
     if (this._bufferCache.has(audioFileId)) {
       return this._bufferCache.get(audioFileId)!
     }
 
-    this._state = 'loading'
-    this._emit()
-
-    const ctx = getAudioContext()
-
-    const response = await fetch(signedUrl)
-    const arrayBuffer = await response.arrayBuffer()
-    const decoded = await ctx.decodeAudioData(arrayBuffer)
-
-    let buffer: AudioBuffer
-    if (decoded.sampleRate === 48000) {
-      buffer = decoded
-    } else {
-      // Resample to 48000Hz via OfflineAudioContext.
-      // Safari ignores { sampleRate: 48000 } in the AudioContext constructor
-      // and uses the system rate, so this path is the common case there.
-      // See DECISIONS.md for the full rationale.
-      const frameCount = Math.ceil(decoded.duration * 48000)
-      const offline = new OfflineAudioContext(decoded.numberOfChannels, frameCount, 48000)
-      const source = offline.createBufferSource()
-      source.buffer = decoded
-      source.connect(offline.destination)
-      source.start(0)
-      buffer = await offline.startRendering()
+    this._loadingSet.add(audioFileId)
+    if (this._state === 'idle') {
+      this._state = 'loading'
+      this._emit()
     }
 
-    this._bufferCache.set(audioFileId, buffer)
-    this._state = 'idle'
-    this._emit()
+    try {
+      const ctx = getAudioContext()
 
-    return buffer
-  }
+      const response = await fetch(signedUrl)
+      const arrayBuffer = await response.arrayBuffer()
+      const decoded = await ctx.decodeAudioData(arrayBuffer)
 
-  // ── Playback controls ─────────────────────────────────────────────────────
+      let buffer: AudioBuffer
+      if (decoded.sampleRate === 48000) {
+        buffer = decoded
+      } else {
+        // Resample to 48kHz — Safari ignores { sampleRate: 48000 } in the
+        // AudioContext constructor and uses the system rate. See DECISIONS.md.
+        const frameCount = Math.ceil(decoded.duration * 48000)
+        const offline = new OfflineAudioContext(decoded.numberOfChannels, frameCount, 48000)
+        const source = offline.createBufferSource()
+        source.buffer = decoded
+        source.connect(offline.destination)
+        source.start(0)
+        buffer = await offline.startRendering()
+      }
 
-  play(trackId: string, audioFileId: string): void {
-    if (this._state === 'loading') return
-
-    const buffer = this._bufferCache.get(audioFileId)
-    if (!buffer) return
-
-    const ctx = getAudioContext()
-    resumeAudioContext()
-
-    // Stop any existing source before creating a fresh one (prevents double-up)
-    const existing = this._activeSources.get(trackId)
-    if (existing) {
-      existing.onended = null
-      existing.stop()
-      this._activeSources.delete(trackId)
-    }
-
-    const source = ctx.createBufferSource()
-    source.buffer = buffer
-    source.connect(this._getTrackGain(trackId))
-    source.onended = () => {
-      this._activeSources.delete(trackId)
-      if (this._state === 'playing' && this._activeTrackId === trackId) {
-        this._pausedOffset = 0
+      this._bufferCache.set(audioFileId, buffer)
+      // Recompute gains so this track gets the correct level if solo is already active.
+      this._recomputeGains()
+      return buffer
+    } finally {
+      this._loadingSet.delete(audioFileId)
+      if (this._loadingSet.size === 0 && this._state === 'loading') {
         this._state = 'idle'
         this._emit()
       }
     }
-
-    const startTime = ctx.currentTime + LOOKAHEAD
-    source.start(startTime, this._pausedOffset)
-
-    this._activeSources.set(trackId, source)
-    this._activeTrackId = trackId
-    // _startedAt matches the scheduled start so position() clamps to 0
-    // during the lookahead window via Math.max(0, ctx.currentTime - _startedAt)
-    this._startedAt = startTime
-    this._state = 'playing'
-    this._emit()
   }
 
-  pause(): void {
-    if (this._state !== 'playing' || !this._activeTrackId) return
+  // ── Playback controls ─────────────────────────────────────────────────────
+  //
+  // State machine for play():
+  //   'playing' → no-op (already running)
+  //   'loading' → no-op (wait for tracks to finish decoding)
+  //   'paused'  → resume all tracks from _pausedOffset
+  //   'idle'    → schedule all buffered tracks fresh from position 0
+
+  play(): void {
+    if (this._state === 'playing' || this._state === 'loading') return
 
     const ctx = getAudioContext()
-    this._pausedOffset += Math.max(0, ctx.currentTime - this._startedAt)
+    resumeAudioContext()
 
-    const source = this._activeSources.get(this._activeTrackId)
-    if (source) {
-      source.onended = null
-      source.stop()
-      this._activeSources.delete(this._activeTrackId)
-    }
-
-    this._state = 'paused'
-    this._emit()
-  }
-
-  stop(): void {
-    if (this._state === 'idle') return
-
+    // Stop any lingering sources without triggering the onended state transition.
     this._activeSources.forEach((source) => {
       source.onended = null
       source.stop()
     })
     this._activeSources.clear()
 
-    this._pausedOffset = 0
-    this._activeTrackId = null
-    this._state = 'idle'
+    const startTime = ctx.currentTime + LOOKAHEAD
+
+    for (const [trackId, audioFileId] of this._trackToFile) {
+      const buffer = this._bufferCache.get(audioFileId)
+      if (!buffer) continue
+
+      const source = ctx.createBufferSource()
+      source.buffer = buffer
+      source.connect(this._getTrackGain(trackId))
+
+      // Only transition to idle on natural completion (state === 'playing').
+      // Guarding here prevents a race where pause()/stop() sets state to
+      // 'paused'/'idle' first, and the synchronous onended from stop() then
+      // incorrectly flips it back to 'idle'.
+      source.onended = () => {
+        this._activeSources.delete(trackId)
+        if (this._state === 'playing' && this._activeSources.size === 0) {
+          this._pausedOffset = 0
+          this._state = 'idle'
+          this._emit()
+        }
+      }
+
+      source.start(startTime, this._pausedOffset)
+      this._activeSources.set(trackId, source)
+    }
+
+    if (this._activeSources.size === 0) return // nothing buffered yet
+
+    // _startedAt matches the scheduled wall-clock start so position() clamps to
+    // 0 during the lookahead window via Math.max(0, ctx.currentTime - _startedAt).
+    this._startedAt = startTime
+    this._state = 'playing'
     this._emit()
   }
 
-  // ── Volume & mute ─────────────────────────────────────────────────────────
+  pause(): void {
+    if (this._state !== 'playing') return
+
+    const ctx = getAudioContext()
+    this._pausedOffset += Math.max(0, ctx.currentTime - this._startedAt)
+
+    // Set state BEFORE calling stop() — the mock (and real browser) fires
+    // onended synchronously/microtask; the guard in onended checks _state so
+    // it won't incorrectly flip back to 'idle'.
+    this._state = 'paused'
+    this._emit()
+
+    this._activeSources.forEach((source) => {
+      source.onended = null
+      source.stop()
+    })
+    this._activeSources.clear()
+  }
+
+  stop(): void {
+    if (this._state === 'idle') return
+
+    // Set state BEFORE calling stop() for the same race reason as pause().
+    this._pausedOffset = 0
+    this._state = 'idle'
+    this._emit()
+
+    this._activeSources.forEach((source) => {
+      source.onended = null
+      source.stop()
+    })
+    this._activeSources.clear()
+  }
+
+  // ── Volume, mute, solo ────────────────────────────────────────────────────
 
   setVolume(trackId: string, value: number): void {
-    this._getTrackGain(trackId).gain.value = value
-    // Keep the pre-mute snapshot current so unmute restores the new value
-    if (this._volumeBeforeMute.has(trackId)) {
-      this._volumeBeforeMute.set(trackId, value)
-    }
+    this._trackVolumes.set(trackId, value)
+    this._recomputeGains()
   }
 
   setMuted(trackId: string, muted: boolean): void {
-    const gain = this._getTrackGain(trackId)
-    if (muted) {
-      this._volumeBeforeMute.set(trackId, gain.gain.value)
-      gain.gain.value = 0
+    this._trackMuted.set(trackId, muted)
+    this._recomputeGains()
+  }
+
+  setSoloed(trackId: string, soloed: boolean): void {
+    if (soloed) {
+      this._soloedTracks.add(trackId)
     } else {
-      gain.gain.value = this._volumeBeforeMute.get(trackId) ?? 1.0
+      this._soloedTracks.delete(trackId)
     }
+    this._recomputeGains()
   }
 }
 

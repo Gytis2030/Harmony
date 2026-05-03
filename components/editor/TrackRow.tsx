@@ -2,7 +2,6 @@
 
 import { useEffect, useReducer, useRef } from 'react'
 import { audioEngine, type EngineState } from '@/lib/audio/audio-engine'
-import { resumeAudioContext } from '@/lib/audio/audio-context'
 
 interface Props {
   trackId: string
@@ -10,10 +9,11 @@ interface Props {
   trackName: string
 }
 
-interface PlayerState {
+interface RowState {
   engineState: EngineState
   volume: number
   muted: boolean
+  soloed: boolean
   loadError: string | null
 }
 
@@ -21,9 +21,10 @@ type Action =
   | { type: 'engine_state'; payload: EngineState }
   | { type: 'set_volume'; payload: number }
   | { type: 'toggle_mute' }
+  | { type: 'toggle_solo' }
   | { type: 'load_error'; payload: string }
 
-function reducer(state: PlayerState, action: Action): PlayerState {
+function reducer(state: RowState, action: Action): RowState {
   switch (action.type) {
     case 'engine_state':
       return { ...state, engineState: action.payload }
@@ -31,16 +32,19 @@ function reducer(state: PlayerState, action: Action): PlayerState {
       return { ...state, volume: action.payload }
     case 'toggle_mute':
       return { ...state, muted: !state.muted }
+    case 'toggle_solo':
+      return { ...state, soloed: !state.soloed }
     case 'load_error':
       return { ...state, engineState: 'idle', loadError: action.payload }
   }
 }
 
-export default function TrackPlayer({ trackId, audioFileId, trackName }: Props) {
+export default function TrackRow({ trackId, audioFileId, trackName }: Props) {
   const [state, dispatch] = useReducer(reducer, {
     engineState: 'idle',
     volume: 1,
     muted: false,
+    soloed: false,
     loadError: null,
   })
 
@@ -52,7 +56,6 @@ export default function TrackPlayer({ trackId, audioFileId, trackName }: Props) 
     }
   }, [])
 
-  // Mirror engine state into local state for button rendering
   useEffect(() => {
     return audioEngine.subscribe((s) => dispatch({ type: 'engine_state', payload: s }))
   }, [])
@@ -64,7 +67,7 @@ export default function TrackPlayer({ trackId, audioFileId, trackName }: Props) 
         const res = await fetch(`/api/tracks/${trackId}/url`)
         if (!res.ok) throw new Error(`Failed to get signed URL (${res.status})`)
         const { url } = (await res.json()) as { url: string }
-        await audioEngine.loadTrack(audioFileId, url)
+        await audioEngine.loadTrack(trackId, audioFileId, url)
       } catch (err) {
         if (mountedRef.current) {
           dispatch({
@@ -76,12 +79,6 @@ export default function TrackPlayer({ trackId, audioFileId, trackName }: Props) 
     }
     load()
   }, [trackId, audioFileId])
-
-  function handlePlay() {
-    // resumeAudioContext + play in the same gesture satisfies browser autoplay policy
-    resumeAudioContext()
-    audioEngine.play(trackId, audioFileId)
-  }
 
   function handleVolumeChange(e: React.ChangeEvent<HTMLInputElement>) {
     const value = parseFloat(e.target.value)
@@ -95,47 +92,49 @@ export default function TrackPlayer({ trackId, audioFileId, trackName }: Props) 
     audioEngine.setMuted(trackId, next)
   }
 
+  function handleSoloToggle() {
+    const next = !state.soloed
+    dispatch({ type: 'toggle_solo' })
+    audioEngine.setSoloed(trackId, next)
+  }
+
   const isLoading = state.engineState === 'loading'
-  const isPlaying = state.engineState === 'playing'
 
   return (
-    <div className="rounded-lg border border-gray-200 p-4">
-      <p className="mb-3 font-medium">{trackName}</p>
+    <div className="flex items-center gap-3 rounded-lg border border-gray-200 px-4 py-3">
+      <span className="w-36 truncate font-medium" title={trackName}>
+        {trackName}
+      </span>
 
-      {state.loadError && <p className="mb-3 text-sm text-red-500">{state.loadError}</p>}
+      {state.loadError && <span className="text-xs text-red-500">{state.loadError}</span>}
 
-      <div className="flex items-center gap-2">
-        {isPlaying ? (
-          <button
-            onClick={() => audioEngine.pause()}
-            className="rounded bg-gray-800 px-3 py-1.5 text-sm text-white hover:bg-gray-700"
-          >
-            Pause
-          </button>
-        ) : (
-          <button
-            onClick={handlePlay}
-            disabled={isLoading}
-            className="rounded bg-gray-800 px-3 py-1.5 text-sm text-white hover:bg-gray-700 disabled:opacity-50"
-          >
-            {isLoading ? 'Loading…' : 'Play'}
-          </button>
-        )}
+      {isLoading && !state.loadError && <span className="text-xs text-gray-400">Loading…</span>}
 
-        <button
-          onClick={() => audioEngine.stop()}
-          disabled={isLoading || state.engineState === 'idle'}
-          className="rounded border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-50 disabled:opacity-50"
-        >
-          Stop
-        </button>
-
+      <div className="ml-auto flex items-center gap-2">
         <button
           onClick={handleMuteToggle}
           disabled={isLoading}
-          className="rounded border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-50 disabled:opacity-50"
+          aria-pressed={state.muted}
+          className={`rounded border px-2.5 py-1 text-xs disabled:opacity-50 ${
+            state.muted
+              ? 'border-orange-400 bg-orange-100 text-orange-700'
+              : 'border-gray-300 hover:bg-gray-50'
+          }`}
         >
-          {state.muted ? 'Unmute' : 'Mute'}
+          M
+        </button>
+
+        <button
+          onClick={handleSoloToggle}
+          disabled={isLoading}
+          aria-pressed={state.soloed}
+          className={`rounded border px-2.5 py-1 text-xs disabled:opacity-50 ${
+            state.soloed
+              ? 'border-yellow-400 bg-yellow-100 text-yellow-700'
+              : 'border-gray-300 hover:bg-gray-50'
+          }`}
+        >
+          S
         </button>
 
         <input
@@ -147,7 +146,7 @@ export default function TrackPlayer({ trackId, audioFileId, trackName }: Props) 
           onChange={handleVolumeChange}
           disabled={isLoading}
           className="w-24"
-          aria-label="Volume"
+          aria-label={`${trackName} volume`}
         />
       </div>
     </div>
