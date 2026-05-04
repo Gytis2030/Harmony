@@ -83,13 +83,14 @@ class AudioEngine {
   // ── Per-track gain (lazy) ─────────────────────────────────────────────────
 
   private _getTrackGain(trackId: string): GainNode {
-    if (!this._trackGains.has(trackId)) {
+    let gain = this._trackGains.get(trackId)
+    if (!gain) {
       const ctx = getAudioContext()
-      const gain = ctx.createGain()
+      gain = ctx.createGain()
       gain.connect(this._getMasterGain())
       this._trackGains.set(trackId, gain)
     }
-    return this._trackGains.get(trackId)!
+    return gain
   }
 
   // ── Gain recompute ────────────────────────────────────────────────────────
@@ -276,19 +277,16 @@ class AudioEngine {
     this._recomputeGains()
   }
 
-  // ── Session teardown ──────────────────────────────────────────────────────
-  //
-  // Called when the project page unmounts. Stops playback, discards all
-  // per-track state so re-navigation re-registers tracks cleanly, but keeps
-  // _bufferCache intact so re-decoding is skipped on fast re-navigation.
-
+  // Keeps _bufferCache intact so re-decoding is skipped on fast re-navigation.
   unloadAllTracks(): void {
     this.stop()
+    this._trackGains.forEach((gain) => gain.disconnect())
+    this._trackGains.clear()
     this._trackToFile.clear()
     this._trackMuted.clear()
     this._trackVolumes.clear()
     this._soloedTracks.clear()
-    this._trackGains.clear()
+    this._loadingSet.clear()
   }
 }
 

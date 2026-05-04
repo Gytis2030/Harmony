@@ -19,8 +19,6 @@ export default function ProjectTransport() {
   const positionSpanRef = useRef<HTMLSpanElement>(null)
   const rafRef = useRef<number>(0)
 
-  // Subscribe to engine state updates; stop and clear per-track state on unmount
-  // so audio doesn't keep playing after navigation and re-mount starts fresh.
   useEffect(() => {
     const unsub = audioEngine.subscribe(setEngineState)
     return () => {

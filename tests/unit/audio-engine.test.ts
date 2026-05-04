@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { LOOKAHEAD } from '@/lib/audio/audio-context'
+import type { EngineState } from '@/lib/audio/audio-engine'
 
 // ── Mock types ───────────────────────────────────────────────────────────────
 
@@ -8,9 +9,10 @@ type MockSource = Pick<AudioBufferSourceNode, 'buffer' | 'connect' | 'start' | '
 }
 
 interface AudioEngineInternals {
+  _state: EngineState
   _bufferCache: Map<string, AudioBuffer>
   _activeSources: Map<string, unknown>
-  _trackGains: Map<string, { gain: { value: number } }>
+  _trackGains: Map<string, { gain: { value: number }; disconnect: () => void }>
   _trackVolumes: Map<string, number>
   _trackMuted: Map<string, boolean>
   _soloedTracks: Set<string>
@@ -24,7 +26,7 @@ interface AudioEngineInternals {
 // ── Minimal Web Audio mocks ──────────────────────────────────────────────────
 
 function makeGainNode() {
-  return { gain: { value: 1 }, connect: vi.fn() }
+  return { gain: { value: 1 }, connect: vi.fn(), disconnect: vi.fn() }
 }
 
 function makeSource(): MockSource {
@@ -378,6 +380,7 @@ describe('AudioEngine', () => {
 
     expect(audioEngine.state).toBe('idle')
     expect(internals()._activeSources.size).toBe(0)
+    expect(internals()._trackGains.size).toBe(0)
     expect(internals()._trackToFile.size).toBe(0)
     expect(internals()._trackMuted.size).toBe(0)
     expect(internals()._trackVolumes.size).toBe(0)
@@ -389,7 +392,7 @@ describe('AudioEngine', () => {
   // Test 14 — state getter is synchronous (validates the lazy useState initializer pattern)
   it('audioEngine.state getter returns current state without subscribing', () => {
     expect(audioEngine.state).toBe('idle')
-    ;(internals() as unknown as { _state: string })._state = 'paused'
+    internals()._state = 'paused'
     expect(audioEngine.state).toBe('paused')
   })
 })
