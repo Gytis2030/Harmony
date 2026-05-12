@@ -23,21 +23,28 @@ export default function PresenceAvatars({ className = '', maxVisible = 3 }: Pres
     )
   }
 
-  const visibleOthers = others.slice(0, maxVisible)
-  const overflow = Math.max(0, others.length - maxVisible)
+  // Deduplicate by user ID — same person in multiple tabs counts as one.
+  // Also exclude connections that belong to self (same user, other tabs).
+  const selfId = self?.info.id
+  const uniqueOtherUsers = [
+    ...new Map(others.filter((o) => o.info.id !== selfId).map((o) => [o.info.id, o])).values(),
+  ]
+
+  const visibleOthers = uniqueOtherUsers.slice(0, maxVisible)
+  const overflow = Math.max(0, uniqueOtherUsers.length - maxVisible)
 
   return (
     <div className={`flex items-center gap-2 ${className}`}>
-      {others.length > 0 && (
+      {uniqueOtherUsers.length > 0 && (
         <div className="hidden text-right text-xs text-slate-500 sm:block">
           <p className="font-medium uppercase tracking-wide text-slate-400">Collaborators</p>
-          <p>{others.length === 1 ? '1 online' : `${others.length} online`}</p>
+          <p>{uniqueOtherUsers.length === 1 ? '1 online' : `${uniqueOtherUsers.length} online`}</p>
         </div>
       )}
 
       <div className="flex -space-x-2">
         {visibleOthers.map((other) => (
-          <AvatarCircle key={other.connectionId} name={other.info.name} color={other.info.color} />
+          <AvatarCircle key={other.info.id} name={other.info.name} color={other.info.color} />
         ))}
 
         {overflow > 0 && (

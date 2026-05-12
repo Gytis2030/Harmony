@@ -43,6 +43,7 @@ export async function POST(req: Request) {
 
   const session = liveblocks.prepareSession(user.id, {
     userInfo: {
+      id: user.id,
       name: user.displayName ?? user.email,
       email: user.email,
       color: getPresenceColor(user.id),

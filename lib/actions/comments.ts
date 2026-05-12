@@ -5,6 +5,7 @@ import { and, eq, isNull } from 'drizzle-orm'
 import { revalidatePath } from 'next/cache'
 import { db } from '@/lib/db'
 import { getUserByClerkId } from '@/lib/db/queries/users'
+import { getCommentsForProject } from '@/lib/db/queries/comments'
 import {
   commentReplies,
   comments,
@@ -427,4 +428,40 @@ export async function createCommentReply(params: { commentId: string; body: stri
     authorName: user.displayName,
     authorEmail: user.email,
   })
+}
+
+// Used by the client-side Liveblocks event listener to re-sync after a remote
+// comment change. Returns the current DB state — callers replace local state
+// with this result rather than applying a partial patch.
+export async function fetchProjectComments(projectId: string): Promise<CommentDto[]> {
+  const user = await requireUser()
+  await requireProjectMembership(projectId, user.id)
+
+  const rawComments = await getCommentsForProject(projectId, user.id)
+
+  return rawComments.map((comment) => ({
+    id: comment.id,
+    projectId: comment.projectId,
+    trackId: comment.trackId,
+    trackName: comment.trackName,
+    authorUserId: comment.authorUserId,
+    authorName: comment.authorName,
+    timestampSeconds: comment.timestampSeconds,
+    timeRangeStartSeconds: comment.timeRangeStartSeconds,
+    timeRangeEndSeconds: comment.timeRangeEndSeconds,
+    body: comment.body,
+    status: comment.status,
+    isPinned: comment.isPinned,
+    createdAt: comment.createdAt.toISOString(),
+    updatedAt: comment.updatedAt.toISOString(),
+    replies: comment.replies.map((reply) => ({
+      id: reply.id,
+      commentId: reply.commentId,
+      authorUserId: reply.authorUserId,
+      authorName: reply.authorName,
+      body: reply.body,
+      createdAt: reply.createdAt.toISOString(),
+      updatedAt: reply.updatedAt.toISOString(),
+    })),
+  }))
 }

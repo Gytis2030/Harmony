@@ -18,6 +18,7 @@ import {
   type CommentFilter,
 } from '@/lib/comments/filter'
 import { audioEngine } from '@/lib/audio/audio-engine'
+import { useBroadcastEvent } from '@/lib/realtime/liveblocks'
 
 export type CommentTarget = {
   trackId: string | null
@@ -96,6 +97,7 @@ export default function CollaborationSidebar({
   const [actionError, setActionError] = useState<string | null>(null)
   const [replyError, setReplyError] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
+  const broadcast = useBroadcastEvent()
 
   const counts = countByFilter(comments)
   const selectedComment = selectedCommentId
@@ -133,6 +135,7 @@ export default function CollaborationSidebar({
         })
         setBody('')
         onCommentCreated(comment)
+        broadcast({ type: 'comment.created', projectId, commentId: comment.id })
       } catch (err) {
         setComposeError(err instanceof Error ? err.message : 'Could not save comment.')
       }
@@ -146,6 +149,11 @@ export default function CollaborationSidebar({
       try {
         const updated = await setCommentStatus({ commentId: comment.id, status })
         onCommentUpdated(updated)
+        broadcast({
+          type: status === 'resolved' ? 'comment.resolved' : 'comment.reopened',
+          projectId,
+          commentId: comment.id,
+        })
       } catch (err) {
         setActionError(err instanceof Error ? err.message : 'Could not update comment.')
       }
@@ -190,6 +198,7 @@ export default function CollaborationSidebar({
         const reply = await createCommentReply({ commentId: comment.id, body: replyBody })
         setReplyBody('')
         onReplyCreated(reply)
+        broadcast({ type: 'comment.replied', projectId, commentId: comment.id, replyId: reply.id })
       } catch (err) {
         setReplyError(err instanceof Error ? err.message : 'Could not save reply.')
       }

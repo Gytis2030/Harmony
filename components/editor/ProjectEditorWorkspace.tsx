@@ -7,8 +7,9 @@ import ProjectTimeline from '@/components/editor/ProjectTimeline'
 import CollaborationSidebar, { type CommentTarget } from '@/components/editor/CollaborationSidebar'
 import PresenceAvatars from '@/components/editor/PresenceAvatars'
 import type { CommentDto, CommentReplyDto } from '@/lib/actions/comments'
+import { fetchProjectComments } from '@/lib/actions/comments'
 import { audioEngine } from '@/lib/audio/audio-engine'
-import { RoomProvider } from '@/lib/realtime/liveblocks'
+import { RoomProvider, useEventListener } from '@/lib/realtime/liveblocks'
 
 type Track = {
   id: string
@@ -33,7 +34,17 @@ interface Props {
   timeSignature: string
 }
 
-export default function ProjectEditorWorkspace({
+// Outer component: only responsible for the Liveblocks room boundary.
+export default function ProjectEditorWorkspace(props: Props) {
+  return (
+    <RoomProvider id={`project:${props.projectId}`} initialPresence={{}}>
+      <ProjectEditorInner {...props} />
+    </RoomProvider>
+  )
+}
+
+// Inner component: lives inside RoomProvider so it can use Liveblocks hooks.
+function ProjectEditorInner({
   projectId,
   projectName,
   tracks,
@@ -45,6 +56,16 @@ export default function ProjectEditorWorkspace({
   const [commentMode, setCommentMode] = useState(false)
   const [target, setTarget] = useState<CommentTarget | null>(null)
   const [selectedCommentId, setSelectedCommentId] = useState<string | null>(null)
+
+  // When another collaborator mutates comments, re-fetch from DB.
+  // Liveblocks does not echo events back to the sender, so only remote changes
+  // trigger this path — the local user's optimistic state is unaffected.
+  useEventListener(({ event }) => {
+    if (event.projectId !== projectId) return
+    fetchProjectComments(projectId)
+      .then((fresh) => setComments(fresh))
+      .catch(() => {})
+  })
 
   // Escape cancels comment mode (skip if a text field is focused)
   useEffect(() => {
@@ -110,7 +131,7 @@ export default function ProjectEditorWorkspace({
   }
 
   return (
-    <RoomProvider id={`project:${projectId}`} initialPresence={{}}>
+    <>
       <header className="flex min-h-16 items-center justify-between border-b border-white/10 bg-[#0c0c12]/95 px-4 backdrop-blur sm:px-6">
         <div className="flex min-w-0 items-center gap-4">
           <Link
@@ -172,6 +193,6 @@ export default function ProjectEditorWorkspace({
           onCommentSelect={handleCommentSelect}
         />
       </div>
-    </RoomProvider>
+    </>
   )
 }

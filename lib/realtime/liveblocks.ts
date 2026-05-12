@@ -10,15 +10,20 @@ type Presence = Record<string, never>
 type Storage = Record<string, never>
 
 export type UserMeta = {
+  id: string
   info: {
+    id: string
     name: string
     email?: string
     color: string
   }
 }
 
-export const { RoomProvider, useOthers, useSelf, useStatus } = createRoomContext<
-  Presence,
-  Storage,
-  UserMeta
->(client)
+export type CommentRealtimeEvent =
+  | { type: 'comment.created'; projectId: string; commentId: string }
+  | { type: 'comment.replied'; projectId: string; commentId: string; replyId: string }
+  | { type: 'comment.resolved'; projectId: string; commentId: string }
+  | { type: 'comment.reopened'; projectId: string; commentId: string }
+
+export const { RoomProvider, useOthers, useSelf, useStatus, useBroadcastEvent, useEventListener } =
+  createRoomContext<Presence, Storage, UserMeta, CommentRealtimeEvent>(client)
