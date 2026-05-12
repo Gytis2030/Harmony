@@ -277,6 +277,34 @@ class AudioEngine {
     this._recomputeGains()
   }
 
+  seek(seconds: number): void {
+    const max = this._maxDuration()
+    const clamped = Math.max(0, max > 0 ? Math.min(seconds, max) : seconds)
+
+    if (this._state === 'playing') {
+      // Clear onended before stopping — same guard as pause()/stop()
+      this._activeSources.forEach((source) => {
+        source.onended = null
+        source.stop()
+      })
+      this._activeSources.clear()
+      // Set paused without emitting — play() below will emit 'playing'
+      this._state = 'paused'
+      this._pausedOffset = clamped
+      this.play()
+    } else {
+      this._pausedOffset = clamped
+    }
+  }
+
+  seekBy(deltaSeconds: number): void {
+    this.seek(this.position + deltaSeconds)
+  }
+
+  private _maxDuration(): number {
+    return this.loadedTrackIds().reduce((max, id) => Math.max(max, this.getTrackDuration(id)), 0)
+  }
+
   // Keeps _bufferCache intact so re-decoding is skipped on fast re-navigation.
   unloadAllTracks(): void {
     this.stop()

@@ -395,4 +395,82 @@ describe('AudioEngine', () => {
     internals()._state = 'paused'
     expect(audioEngine.state).toBe('paused')
   })
+
+  // ── Phase 4c — seek() tests ───────────────────────────────────────────────
+
+  // Test 15 — seek while idle sets _pausedOffset, state stays idle
+  it('seek() while idle sets _pausedOffset and leaves state idle', () => {
+    audioEngine.seek(5)
+    expect(internals()._pausedOffset).toBe(5)
+    expect(audioEngine.state).toBe('idle')
+  })
+
+  // Test 16 — seek while paused sets _pausedOffset, no sources started
+  it('seek() while paused sets _pausedOffset and starts no sources', () => {
+    const TRACK = 'seek-p-t',
+      FILE = 'seek-p-f'
+    internals()._trackToFile.set(TRACK, FILE)
+    internals()._bufferCache.set(FILE, makeBuffer(48000, 30))
+
+    currentTimeRef.value = 0
+    audioEngine.play()
+    audioEngine.pause()
+    expect(audioEngine.state).toBe('paused')
+
+    audioEngine.seek(12)
+    expect(internals()._pausedOffset).toBe(12)
+    expect(internals()._activeSources.size).toBe(0)
+    expect(audioEngine.state).toBe('paused')
+  })
+
+  // Test 17 — seek while playing reschedules sources at the new offset
+  it('seek() while playing reschedules both tracks at the seek offset', () => {
+    const TRACK_A = 'seek-a',
+      FILE_A = 'seek-fa'
+    const TRACK_B = 'seek-b',
+      FILE_B = 'seek-fb'
+    internals()._trackToFile.set(TRACK_A, FILE_A)
+    internals()._trackToFile.set(TRACK_B, FILE_B)
+    internals()._bufferCache.set(FILE_A, makeBuffer(48000, 30))
+    internals()._bufferCache.set(FILE_B, makeBuffer(48000, 30))
+
+    currentTimeRef.value = 0
+    audioEngine.play()
+    expect(audioEngine.state).toBe('playing')
+
+    currentTimeRef.value = LOOKAHEAD + 3
+    audioEngine.seek(8)
+
+    expect(audioEngine.state).toBe('playing')
+    expect(internals()._pausedOffset).toBe(8)
+    expect(internals()._startedAt).toBeCloseTo(currentTimeRef.value + LOOKAHEAD, 5)
+    expect(internals()._activeSources.size).toBe(2)
+
+    const sources = Array.from(internals()._activeSources.values()) as MockSource[]
+    for (const src of sources) {
+      const startCall = (src.start as ReturnType<typeof vi.fn>).mock.calls.at(-1) as [
+        number,
+        number,
+      ]
+      expect(startCall[0]).toBeCloseTo(currentTimeRef.value + LOOKAHEAD, 5)
+      expect(startCall[1]).toBe(8)
+    }
+  })
+
+  // Test 18 — seek() clamps negative values to 0
+  it('seek() clamps negative values to 0', () => {
+    audioEngine.seek(-5)
+    expect(internals()._pausedOffset).toBe(0)
+  })
+
+  // Test 19 — seek() clamps values beyond track duration to duration
+  it('seek() clamps values beyond track duration to max duration', () => {
+    const TRACK = 'seek-clamp',
+      FILE = 'seek-clamp-f'
+    internals()._trackToFile.set(TRACK, FILE)
+    internals()._bufferCache.set(FILE, makeBuffer(48000, 30))
+
+    audioEngine.seek(99)
+    expect(internals()._pausedOffset).toBe(30)
+  })
 })
