@@ -7,6 +7,7 @@ import TrackRow from '@/components/editor/TrackRow'
 import Playhead from '@/components/editor/Playhead'
 import TimelineMarkers from '@/components/editor/TimelineMarkers'
 import UploadWidget from '@/components/editor/UploadWidget'
+import type { CommentDto } from '@/lib/actions/comments'
 
 type Track = {
   id: string
@@ -25,8 +26,12 @@ type Track = {
 interface Props {
   projectId: string
   tracks: Track[]
+  comments: CommentDto[]
   bpm: number | null
   timeSignature: string
+  commentMode: boolean
+  onProjectCommentTarget: (timestampSeconds: number) => void
+  onTrackCommentTarget: (trackId: string, trackName: string, timestampSeconds: number) => void
 }
 
 const ZOOM_LEVELS = [1, 1.5, 2, 3] as const
@@ -45,7 +50,16 @@ function buildMarkers(duration: number): number[] {
   return markers
 }
 
-export default function ProjectTimeline({ projectId, tracks, bpm, timeSignature }: Props) {
+export default function ProjectTimeline({
+  projectId,
+  tracks,
+  comments,
+  bpm,
+  timeSignature,
+  commentMode,
+  onProjectCommentTarget,
+  onTrackCommentTarget,
+}: Props) {
   const [zoomIndex, setZoomIndex] = useState(0)
   const [trackDurations, setTrackDurations] = useState<Record<string, number>>({})
   const [soloedTrackId, setSoloedTrackId] = useState<string | null>(null)
@@ -71,6 +85,7 @@ export default function ProjectTimeline({ projectId, tracks, bpm, timeSignature 
   const canZoomOut = zoomIndex > 0
   const canZoomIn = zoomIndex < ZOOM_LEVELS.length - 1
   const markers = useMemo(() => buildMarkers(duration), [duration])
+  const projectComments = comments.filter((comment) => comment.trackId === null)
 
   return (
     <section className="min-w-0 bg-[#08080d]">
@@ -101,7 +116,13 @@ export default function ProjectTimeline({ projectId, tracks, bpm, timeSignature 
             } as CSSProperties
           }
         >
-          <TimelineMarkers duration={duration} markers={markers} />
+          <TimelineMarkers
+            duration={duration}
+            markers={markers}
+            comments={projectComments}
+            commentMode={commentMode}
+            onCommentTarget={onProjectCommentTarget}
+          />
 
           {hasAudioTracks && markers.length > 0 && (
             <div
@@ -137,8 +158,11 @@ export default function ProjectTimeline({ projectId, tracks, bpm, timeSignature 
                 accentColor={track.color ?? TRACK_ACCENTS[index % TRACK_ACCENTS.length]}
                 zoom={zoom}
                 projectDuration={duration}
+                comments={comments.filter((comment) => comment.trackId === track.id)}
+                commentMode={commentMode}
                 onTrackLoaded={handleTrackLoaded}
                 onSoloChange={handleSoloChange}
+                onCommentTarget={onTrackCommentTarget}
               />
             ) : (
               <div

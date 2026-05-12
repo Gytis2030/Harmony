@@ -1,10 +1,11 @@
 'use client'
 
 import { useEffect, useReducer, useRef } from 'react'
-import { MoreHorizontal } from 'lucide-react'
+import { MessageSquare, MoreHorizontal } from 'lucide-react'
 import { audioEngine, type EngineState } from '@/lib/audio/audio-engine'
 import { updateTrackMix } from '@/lib/actions/tracks'
 import Waveform from '@/components/editor/Waveform'
+import type { CommentDto } from '@/lib/actions/comments'
 
 interface Props {
   trackId: string
@@ -18,8 +19,11 @@ interface Props {
   accentColor: string
   zoom: number
   projectDuration: number
+  comments: CommentDto[]
+  commentMode: boolean
   onTrackLoaded: (trackId: string, duration: number) => void
   onSoloChange: (trackId: string) => void
+  onCommentTarget: (trackId: string, trackName: string, timestampSeconds: number) => void
 }
 
 interface RowState {
@@ -75,8 +79,11 @@ export default function TrackRow({
   accentColor,
   zoom,
   projectDuration,
+  comments,
+  commentMode,
   onTrackLoaded,
   onSoloChange,
+  onCommentTarget,
 }: Props) {
   const [state, dispatch] = useReducer(reducer, {
     engineState: 'idle',
@@ -165,7 +172,12 @@ export default function TrackRow({
     if (!timelineRef.current || projectDuration <= 0) return
     const rect = timelineRef.current.getBoundingClientRect()
     const ratio = (e.clientX - rect.left) / rect.width
-    audioEngine.seek(Math.max(0, Math.min(ratio, 1)) * projectDuration)
+    const timestampSeconds = Math.max(0, Math.min(ratio, 1)) * projectDuration
+    if (commentMode) {
+      onCommentTarget(trackId, trackName, timestampSeconds)
+      return
+    }
+    audioEngine.seek(timestampSeconds)
   }
 
   const isLoading = state.engineState === 'loading'
@@ -240,7 +252,10 @@ export default function TrackRow({
       <div
         ref={timelineRef}
         onClick={handleTimelineClick}
-        className="relative flex min-w-0 cursor-pointer items-center bg-[#0b0b12] py-3"
+        className={[
+          'relative flex min-w-0 cursor-pointer items-center bg-[#0b0b12] py-3',
+          commentMode ? 'cursor-crosshair' : '',
+        ].join(' ')}
       >
         {state.loadError && <span className="text-xs text-red-300">{state.loadError}</span>}
         {isLoading && !state.loadError && !state.audioBuffer && (
@@ -255,6 +270,23 @@ export default function TrackRow({
             accentColor={accentColor}
           />
         )}
+        {projectDuration > 0 &&
+          comments.map((comment) => (
+            <button
+              key={comment.id}
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                audioEngine.seek(comment.timestampSeconds)
+              }}
+              className="absolute top-2 z-20 inline-flex h-6 w-6 -translate-x-1/2 items-center justify-center rounded-full border border-white/20 bg-[#141421] text-violet-100 shadow-[0_0_14px_rgba(124,58,237,0.35)] transition hover:border-violet-300/60 hover:bg-[#7c3aed]"
+              style={{ left: `${(comment.timestampSeconds / projectDuration) * 100}%` }}
+              aria-label={`Seek to comment at ${formatDuration(comment.timestampSeconds)}`}
+              title={comment.body}
+            >
+              <MessageSquare className="h-3.5 w-3.5" />
+            </button>
+          ))}
       </div>
     </div>
   )

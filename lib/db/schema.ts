@@ -19,6 +19,7 @@ export const workspaceMemberRoleEnum = pgEnum('workspace_member_role', [
   'editor',
   'viewer',
 ])
+export const commentStatusEnum = pgEnum('comment_status', ['open', 'resolved'])
 
 export const users = pgTable('users', {
   id: uuid('id').defaultRandom().primaryKey(),
@@ -124,19 +125,48 @@ export const comments = pgTable(
   'comments',
   {
     id: uuid('id').defaultRandom().primaryKey(),
-    trackId: uuid('track_id')
+    projectId: uuid('project_id')
       .notNull()
-      .references(() => tracks.id),
-    authorId: uuid('author_id')
+      .references(() => projects.id),
+    trackId: uuid('track_id').references(() => tracks.id),
+    authorUserId: uuid('author_user_id')
       .notNull()
       .references(() => users.id),
     body: text('body').notNull(),
     timestampSeconds: real('timestamp_seconds').notNull(),
-    resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+    timeRangeStartSeconds: real('time_range_start_seconds'),
+    timeRangeEndSeconds: real('time_range_end_seconds'),
+    status: commentStatusEnum('status').default('open').notNull(),
+    isPinned: boolean('is_pinned').default(false).notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
-  (t) => [index('comments_track_idx').on(t.trackId)]
+  (t) => [
+    index('comments_project_idx').on(t.projectId),
+    index('comments_track_idx').on(t.trackId),
+    index('comments_project_timestamp_idx').on(t.projectId, t.timestampSeconds),
+    index('comments_project_pinned_idx').on(t.projectId, t.isPinned),
+  ]
+)
+
+export const commentReplies = pgTable(
+  'comment_replies',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    commentId: uuid('comment_id')
+      .notNull()
+      .references(() => comments.id, { onDelete: 'cascade' }),
+    authorUserId: uuid('author_user_id')
+      .notNull()
+      .references(() => users.id),
+    body: text('body').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    index('comment_replies_comment_idx').on(t.commentId),
+    index('comment_replies_author_idx').on(t.authorUserId),
+  ]
 )
 
 export const projectVersions = pgTable('project_versions', {

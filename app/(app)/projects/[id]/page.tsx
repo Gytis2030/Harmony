@@ -5,7 +5,8 @@ import { ArrowLeft, Circle } from 'lucide-react'
 import { getUserByClerkId } from '@/lib/db/queries/users'
 import { getProjectById } from '@/lib/db/queries/projects'
 import { getTracksForProject } from '@/lib/db/queries/tracks'
-import ProjectTimeline from '@/components/editor/ProjectTimeline'
+import { getCommentsForProject } from '@/lib/db/queries/comments'
+import ProjectEditorWorkspace from '@/components/editor/ProjectEditorWorkspace'
 
 interface Props {
   params: { id: string }
@@ -22,6 +23,17 @@ export default async function ProjectEditorPage({ params }: Props) {
   if (!project) notFound()
 
   const tracks = await getTracksForProject(params.id)
+  const comments = await getCommentsForProject(params.id, user.id)
+  const commentDtos = comments.map((comment) => ({
+    ...comment,
+    createdAt: comment.createdAt.toISOString(),
+    updatedAt: comment.updatedAt.toISOString(),
+    replies: comment.replies.map((reply) => ({
+      ...reply,
+      createdAt: reply.createdAt.toISOString(),
+      updatedAt: reply.updatedAt.toISOString(),
+    })),
+  }))
 
   return (
     <main className="min-h-screen bg-[#07070b] text-slate-100">
@@ -58,42 +70,13 @@ export default async function ProjectEditorPage({ params }: Props) {
         </div>
       </header>
 
-      <div className="grid min-h-[calc(100vh-4rem)] grid-cols-1 xl:grid-cols-[minmax(0,1fr)_300px]">
-        <ProjectTimeline
-          projectId={params.id}
-          tracks={tracks}
-          bpm={project.bpm}
-          timeSignature={`${project.timeSignatureNumerator}/${project.timeSignatureDenominator}`}
-        />
-
-        <aside className="hidden border-l border-white/10 bg-[#0b0b11] xl:block">
-          <div className="border-b border-white/10 px-5 py-4">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Collaboration
-            </p>
-          </div>
-          <div className="space-y-6 px-5 py-5">
-            <section>
-              <h2 className="text-sm font-semibold text-slate-200">Comments</h2>
-              <p className="mt-2 text-sm leading-6 text-slate-500">
-                Timestamped feedback will live here in Phase 5.
-              </p>
-            </section>
-            <section>
-              <h2 className="text-sm font-semibold text-slate-200">Versions</h2>
-              <p className="mt-2 text-sm leading-6 text-slate-500">
-                Mix notes and stem revisions will be grouped here.
-              </p>
-            </section>
-            <section>
-              <h2 className="text-sm font-semibold text-slate-200">Activity</h2>
-              <p className="mt-2 text-sm leading-6 text-slate-500">
-                Uploads, comments, and approvals will appear as a project log.
-              </p>
-            </section>
-          </div>
-        </aside>
-      </div>
+      <ProjectEditorWorkspace
+        projectId={params.id}
+        tracks={tracks}
+        comments={commentDtos}
+        bpm={project.bpm}
+        timeSignature={`${project.timeSignatureNumerator}/${project.timeSignatureDenominator}`}
+      />
     </main>
   )
 }
