@@ -2,6 +2,7 @@
 
 import { useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { Upload } from 'lucide-react'
 import { addTrack } from '@/lib/actions/tracks'
 import { Button } from '@/components/ui/button'
 
@@ -106,7 +107,6 @@ export function UploadWidget({ projectId }: Props) {
 
   return (
     <div>
-      {/* Drop zone */}
       <div
         onDragOver={(e) => {
           e.preventDefault()
@@ -115,8 +115,8 @@ export function UploadWidget({ projectId }: Props) {
         onDragLeave={() => setIsDragOver(false)}
         onDrop={handleDrop}
         className={[
-          'flex flex-col items-center justify-center rounded-lg border-2 border-dashed px-6 py-10 text-center transition-colors',
-          isDragOver ? 'border-black bg-gray-50' : 'border-gray-300 bg-white',
+          'flex min-h-[68px] items-center justify-between gap-4 rounded-md border border-dashed px-4 py-3 transition-colors',
+          isDragOver ? 'border-[#7c3aed] bg-[#7c3aed]/15' : 'border-white/15 bg-white/[0.03]',
           isUploading ? 'pointer-events-none opacity-60' : 'cursor-pointer',
         ].join(' ')}
         onClick={() => !isUploading && inputRef.current?.click()}
@@ -132,20 +132,31 @@ export function UploadWidget({ projectId }: Props) {
 
         {state.status === 'idle' && (
           <>
-            <p className="text-sm font-medium text-gray-700">
-              Drop a WAV or MP3 here, or{' '}
-              <span className="underline underline-offset-2">click to browse</span>
-            </p>
-            <p className="mt-1 text-xs text-gray-400">Max 100 MB</p>
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded border border-white/10 bg-black/30 text-slate-300">
+                <Upload className="h-4 w-4" />
+              </div>
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium text-slate-200">
+                  Drop a WAV or MP3, or click to browse
+                </p>
+                <p className="mt-1 text-xs text-slate-500">Max 100 MB</p>
+              </div>
+            </div>
+            <span className="hidden rounded border border-white/10 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-slate-400 sm:inline-flex">
+              Upload
+            </span>
           </>
         )}
 
         {state.status === 'uploading' && (
-          <div className="w-full max-w-xs">
-            <p className="mb-2 text-sm font-medium text-gray-700">Uploading… {state.progress}%</p>
-            <div className="h-2 w-full overflow-hidden rounded-full bg-gray-200">
+          <div className="w-full max-w-md">
+            <p className="mb-2 text-sm font-medium text-slate-200">
+              Uploading... {state.progress}%
+            </p>
+            <div className="h-2 w-full overflow-hidden rounded-full bg-white/10">
               <div
-                className="h-full rounded-full bg-black transition-all"
+                className="h-full rounded-full bg-[#7c3aed] transition-all"
                 style={{ width: `${state.progress}%` }}
               />
             </div>
@@ -153,18 +164,17 @@ export function UploadWidget({ projectId }: Props) {
         )}
 
         {state.status === 'done' && (
-          <p className="text-sm font-medium text-green-600">Upload complete!</p>
+          <p className="text-sm font-medium text-emerald-300">Upload complete</p>
         )}
       </div>
 
-      {/* Error banner with retry */}
       {state.status === 'error' && (
-        <div className="mt-3 flex items-center justify-between rounded-md border border-red-200 bg-red-50 px-4 py-3">
-          <p className="text-sm text-red-700">{state.message}</p>
+        <div className="mt-3 flex items-center justify-between rounded-md border border-red-400/30 bg-red-950/30 px-4 py-3">
+          <p className="text-sm text-red-200">{state.message}</p>
           <Button
             variant="ghost"
             size="sm"
-            className="ml-4 shrink-0 text-red-700 hover:bg-red-100"
+            className="ml-4 shrink-0 text-red-100 hover:bg-red-400/10 hover:text-white"
             onClick={() => {
               setState({ status: 'idle' })
               inputRef.current?.click()

@@ -1,11 +1,14 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { Minus, Pause, Play, Plus, Square } from 'lucide-react'
 import { audioEngine, type EngineState } from '@/lib/audio/audio-engine'
 import { resumeAudioContext } from '@/lib/audio/audio-context'
 
 interface Props {
   zoom: number
+  bpm: number | null
+  timeSignature: string
   canZoomIn: boolean
   canZoomOut: boolean
   onZoomIn: () => void
@@ -31,6 +34,8 @@ function isEditableTarget(target: EventTarget | null): boolean {
 
 export default function ProjectTransport({
   zoom,
+  bpm,
+  timeSignature,
   canZoomIn,
   canZoomOut,
   onZoomIn,
@@ -115,62 +120,88 @@ export default function ProjectTransport({
   const isPlaying = engineState === 'playing'
 
   return (
-    <div className="mb-6 flex flex-wrap items-center gap-4 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
-      <button
-        onClick={handlePlayPause}
-        disabled={isLoading}
-        className="rounded bg-gray-800 px-4 py-1.5 text-sm text-white hover:bg-gray-700 disabled:opacity-50"
-      >
-        {isLoading ? 'Loading…' : isPlaying ? 'Pause' : 'Play'}
-      </button>
+    <div className="flex flex-wrap items-center gap-3">
+      <div className="flex items-center overflow-hidden rounded-md border border-white/10 bg-black/30">
+        <button
+          onClick={handlePlayPause}
+          disabled={isLoading}
+          className="inline-flex h-10 w-12 items-center justify-center bg-[#7c3aed] text-white transition hover:bg-[#8b5cf6] disabled:opacity-50"
+          aria-label={isPlaying ? 'Pause' : 'Play'}
+        >
+          {isLoading ? (
+            <span className="h-2 w-2 rounded-full bg-white" />
+          ) : isPlaying ? (
+            <Pause className="h-4 w-4" />
+          ) : (
+            <Play className="h-4 w-4 fill-current" />
+          )}
+        </button>
 
-      <button
-        onClick={() => audioEngine.stop()}
-        disabled={isLoading || engineState === 'idle'}
-        className="rounded border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-100 disabled:opacity-50"
-      >
-        Stop
-      </button>
+        <button
+          onClick={() => audioEngine.stop()}
+          disabled={isLoading || engineState === 'idle'}
+          className="inline-flex h-10 w-10 items-center justify-center border-l border-white/10 text-slate-300 transition hover:bg-white/5 hover:text-white disabled:opacity-40"
+          aria-label="Stop"
+        >
+          <Square className="h-3.5 w-3.5 fill-current" />
+        </button>
+      </div>
 
       <span
         ref={positionSpanRef}
-        className="min-w-[90px] font-mono text-sm tabular-nums text-gray-600"
+        className="min-w-[104px] rounded border border-white/10 bg-black/30 px-3 py-2 font-mono text-sm tabular-nums text-slate-200"
       >
         0:00
       </span>
 
-      <div className="ml-auto flex items-center gap-2">
-        <span className="text-xs text-gray-400">Zoom</span>
-        <button
-          onClick={onZoomOut}
-          disabled={!canZoomOut}
-          className="rounded border border-gray-300 px-2 py-1 text-xs hover:bg-gray-100 disabled:opacity-50"
-          aria-label="Zoom out"
-        >
-          -
-        </button>
-        <span className="w-10 text-center text-xs tabular-nums text-gray-500">
-          {Math.round(zoom * 100)}%
-        </span>
-        <button
-          onClick={onZoomIn}
-          disabled={!canZoomIn}
-          className="rounded border border-gray-300 px-2 py-1 text-xs hover:bg-gray-100 disabled:opacity-50"
-          aria-label="Zoom in"
-        >
-          +
-        </button>
-        <span className="text-xs text-gray-400">Master</span>
-        <input
-          type="range"
-          min={0}
-          max={1}
-          step={0.01}
-          value={masterVolume}
-          onChange={handleMasterVolume}
-          className="w-24"
-          aria-label="Master volume"
-        />
+      <div className="flex items-center gap-2 rounded border border-white/10 bg-black/20 px-3 py-2 text-xs text-slate-400">
+        <span className="font-semibold uppercase tracking-wide text-slate-500">Tempo</span>
+        <span className="tabular-nums text-slate-200">{bpm ? `${bpm} BPM` : 'No BPM'}</span>
+        <span className="text-slate-600">/</span>
+        <span className="tabular-nums text-slate-200">{timeSignature}</span>
+      </div>
+
+      <div className="ml-auto flex flex-wrap items-center gap-3">
+        <div className="flex items-center gap-2 rounded border border-white/10 bg-black/20 px-2 py-1.5">
+          <span className="px-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Zoom
+          </span>
+          <button
+            onClick={onZoomOut}
+            disabled={!canZoomOut}
+            className="inline-flex h-7 w-7 items-center justify-center rounded border border-white/10 text-slate-300 transition hover:bg-white/10 hover:text-white disabled:opacity-40"
+            aria-label="Zoom out"
+          >
+            <Minus className="h-3.5 w-3.5" />
+          </button>
+          <span className="w-11 text-center text-xs tabular-nums text-slate-400">
+            {Math.round(zoom * 100)}%
+          </span>
+          <button
+            onClick={onZoomIn}
+            disabled={!canZoomIn}
+            className="inline-flex h-7 w-7 items-center justify-center rounded border border-white/10 text-slate-300 transition hover:bg-white/10 hover:text-white disabled:opacity-40"
+            aria-label="Zoom in"
+          >
+            <Plus className="h-3.5 w-3.5" />
+          </button>
+        </div>
+
+        <label className="flex items-center gap-2 rounded border border-white/10 bg-black/20 px-3 py-2">
+          <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Master
+          </span>
+          <input
+            type="range"
+            min={0}
+            max={1}
+            step={0.01}
+            value={masterVolume}
+            onChange={handleMasterVolume}
+            className="h-1 w-24 accent-[#7c3aed]"
+            aria-label="Master volume"
+          />
+        </label>
       </div>
     </div>
   )
