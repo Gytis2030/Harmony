@@ -2,11 +2,18 @@
 
 import { useEffect, useReducer, useRef } from 'react'
 import { audioEngine, type EngineState } from '@/lib/audio/audio-engine'
+import { updateTrackMix } from '@/lib/actions/tracks'
+import Waveform from '@/components/editor/Waveform'
 
 interface Props {
   trackId: string
   audioFileId: string
   trackName: string
+  initialVolume: number
+  initialMuted: boolean
+  zoom: number
+  projectDuration: number
+  onTrackLoaded: (trackId: string, duration: number) => void
 }
 
 interface RowState {
@@ -15,6 +22,7 @@ interface RowState {
   muted: boolean
   soloed: boolean
   loadError: string | null
+  audioBuffer: AudioBuffer | null
 }
 
 type Action =
@@ -23,6 +31,7 @@ type Action =
   | { type: 'toggle_mute' }
   | { type: 'toggle_solo' }
   | { type: 'load_error'; payload: string }
+  | { type: 'load_success'; payload: AudioBuffer }
 
 function reducer(state: RowState, action: Action): RowState {
   switch (action.type) {
@@ -36,19 +45,33 @@ function reducer(state: RowState, action: Action): RowState {
       return { ...state, soloed: !state.soloed }
     case 'load_error':
       return { ...state, engineState: 'idle', loadError: action.payload }
+    case 'load_success':
+      return { ...state, audioBuffer: action.payload }
   }
 }
 
-export default function TrackRow({ trackId, audioFileId, trackName }: Props) {
+export default function TrackRow({
+  trackId,
+  audioFileId,
+  trackName,
+  initialVolume,
+  initialMuted,
+  zoom,
+  projectDuration,
+  onTrackLoaded,
+}: Props) {
   const [state, dispatch] = useReducer(reducer, {
     engineState: 'idle',
-    volume: 1,
-    muted: false,
+    volume: initialVolume,
+    muted: initialMuted,
     soloed: false,
     loadError: null,
+    audioBuffer: null,
   })
 
   const mountedRef = useRef(true)
+  const didMountVolumeRef = useRef(false)
+  const timelineRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     mountedRef.current = true
     return () => {
@@ -67,7 +90,11 @@ export default function TrackRow({ trackId, audioFileId, trackName }: Props) {
         const res = await fetch(`/api/tracks/${trackId}/url`)
         if (!res.ok) throw new Error(`Failed to get signed URL (${res.status})`)
         const { url } = (await res.json()) as { url: string }
-        await audioEngine.loadTrack(trackId, audioFileId, url)
+        const buffer = await audioEngine.loadTrack(trackId, audioFileId, url)
+        if (mountedRef.current) {
+          dispatch({ type: 'load_success', payload: buffer })
+          onTrackLoaded(trackId, buffer.duration)
+        }
       } catch (err) {
         if (mountedRef.current) {
           dispatch({
@@ -78,7 +105,25 @@ export default function TrackRow({ trackId, audioFileId, trackName }: Props) {
       }
     }
     load()
-  }, [trackId, audioFileId])
+  }, [trackId, audioFileId, onTrackLoaded])
+
+  useEffect(() => {
+    audioEngine.setVolume(trackId, initialVolume)
+    audioEngine.setMuted(trackId, initialMuted)
+  }, [trackId, initialVolume, initialMuted])
+
+  useEffect(() => {
+    if (!didMountVolumeRef.current) {
+      didMountVolumeRef.current = true
+      return
+    }
+
+    const timeout = window.setTimeout(() => {
+      void updateTrackMix({ trackId, volume: state.volume })
+    }, 300)
+
+    return () => window.clearTimeout(timeout)
+  }, [trackId, state.volume])
 
   function handleVolumeChange(e: React.ChangeEvent<HTMLInputElement>) {
     const value = parseFloat(e.target.value)
@@ -90,6 +135,7 @@ export default function TrackRow({ trackId, audioFileId, trackName }: Props) {
     const next = !state.muted
     dispatch({ type: 'toggle_mute' })
     audioEngine.setMuted(trackId, next)
+    void updateTrackMix({ trackId, isMuted: next })
   }
 
   function handleSoloToggle() {
@@ -98,19 +144,41 @@ export default function TrackRow({ trackId, audioFileId, trackName }: Props) {
     audioEngine.setSoloed(trackId, next)
   }
 
+  function handleTimelineClick(e: React.MouseEvent<HTMLDivElement>) {
+    if (!timelineRef.current || projectDuration <= 0) return
+    const rect = timelineRef.current.getBoundingClientRect()
+    const ratio = (e.clientX - rect.left) / rect.width
+    audioEngine.seek(Math.max(0, Math.min(ratio, 1)) * projectDuration)
+  }
+
   const isLoading = state.engineState === 'loading'
 
   return (
-    <div className="flex items-center gap-3 rounded-lg border border-gray-200 px-4 py-3">
-      <span className="w-36 truncate font-medium" title={trackName}>
+    <div className="flex items-center gap-3 rounded-lg border border-gray-200 px-4 py-2">
+      <span className="w-44 shrink-0 truncate font-medium" title={trackName}>
         {trackName}
       </span>
 
-      {state.loadError && <span className="text-xs text-red-500">{state.loadError}</span>}
+      <div
+        ref={timelineRef}
+        onClick={handleTimelineClick}
+        className="flex min-w-0 flex-1 cursor-pointer items-center"
+      >
+        {state.loadError && <span className="text-xs text-red-500">{state.loadError}</span>}
+        {isLoading && !state.loadError && !state.audioBuffer && (
+          <span className="text-xs text-gray-400">Loading…</span>
+        )}
+        {state.audioBuffer && (
+          <Waveform
+            trackId={trackId}
+            audioBuffer={state.audioBuffer}
+            zoom={zoom}
+            projectDuration={projectDuration}
+          />
+        )}
+      </div>
 
-      {isLoading && !state.loadError && <span className="text-xs text-gray-400">Loading…</span>}
-
-      <div className="ml-auto flex items-center gap-2">
+      <div className="flex shrink-0 items-center gap-2">
         <button
           onClick={handleMuteToggle}
           disabled={isLoading}

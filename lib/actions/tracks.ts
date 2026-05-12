@@ -73,3 +73,52 @@ export async function addTrack(params: {
 
   revalidatePath(`/projects/${params.projectId}`)
 }
+
+export async function updateTrackMix(params: {
+  trackId: string
+  volume?: number
+  isMuted?: boolean
+}) {
+  const { userId: clerkId } = auth()
+  if (!clerkId) throw new Error('Unauthorized')
+
+  if (params.volume === undefined && params.isMuted === undefined) {
+    throw new Error('No mix changes provided')
+  }
+
+  const user = await getUserByClerkId(clerkId)
+  if (!user) throw new Error('User not found')
+
+  const [row] = await db
+    .select({
+      projectId: tracks.projectId,
+      workspaceId: projects.workspaceId,
+    })
+    .from(tracks)
+    .innerJoin(projects, eq(projects.id, tracks.projectId))
+    .where(eq(tracks.id, params.trackId))
+    .limit(1)
+
+  if (!row) throw new Error('Track not found')
+
+  const [membership] = await db
+    .select({ role: workspaceMembers.role })
+    .from(workspaceMembers)
+    .where(
+      and(eq(workspaceMembers.workspaceId, row.workspaceId), eq(workspaceMembers.userId, user.id))
+    )
+    .limit(1)
+
+  if (!membership) throw new Error('Forbidden')
+
+  const values: Partial<typeof tracks.$inferInsert> = { updatedAt: new Date() }
+  if (params.volume !== undefined) {
+    values.volume = Math.max(0, Math.min(1, params.volume))
+  }
+  if (params.isMuted !== undefined) {
+    values.isMuted = params.isMuted
+  }
+
+  await db.update(tracks).set(values).where(eq(tracks.id, params.trackId))
+  revalidatePath(`/projects/${row.projectId}`)
+}

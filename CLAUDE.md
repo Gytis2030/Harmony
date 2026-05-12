@@ -35,10 +35,10 @@ If a request is vague ("add comments"), ask one clarifying question before codin
 - **Framework**: Next.js 14 (App Router), TypeScript, React Server Components where it makes sense.
 - **Styling**: Tailwind CSS. shadcn/ui for primitives.
 - **Database**: Postgres on Supabase (using its managed Postgres only — not Auth, Storage, or Realtime). Drizzle ORM for schema and queries. Use the pooled connection string (`pgbouncer=true`) for serverless.
-- **Auth**: Clerk.
+- **Auth**: Clerk (`@clerk/nextjs@^5` — do not upgrade to v6, requires Next.js 15).
 - **Storage**: Cloudflare R2 for audio files. Always upload via signed URLs from the browser — never proxy file bytes through API routes.
 - **Real-time**: Yjs for CRDT, Liveblocks as the provider (we can self-host later if needed).
-- **Audio**: Web Audio API for playback and scheduling. Wavesurfer.js for waveform rendering. Tone.js only if scheduling complexity grows.
+- **Audio**: Web Audio API for playback and scheduling. Wavesurfer.js (^7.x) for waveform rendering only — all playback goes through our `AudioEngine`. Tone.js only if scheduling complexity grows.
 - **Payments**: Stripe Checkout + Customer Portal. No custom billing UI.
 - **Tests**: Vitest for unit, Playwright for E2E.
 - **Hosting**: Vercel (web), Supabase (db), Cloudflare R2 (files), Liveblocks (realtime).
@@ -60,13 +60,12 @@ app/                    Next.js App Router routes
   sign-in/[[...sign-in]]/ sign-up/[[...sign-up]]/   Clerk catch-all auth pages
 components/
   ui/                   shadcn primitives — do not edit
-  timeline/             Timeline + track rows + playhead
-  editor/               Project editor shell, toolbars, panels
+  editor/               Project editor shell, transport, track rows, waveform, playhead
   marketing/            Marketing-only components (AuthNav, etc.)
 lib/
   actions/              Server Actions called from client components
   db/                   Drizzle schema, migrations, query helpers
-  audio/                Web Audio scheduling, mixing, AudioContext singleton
+  audio/                Web Audio scheduling, mixing, AudioContext singleton, peaks helper
   realtime/             Yjs document model, Liveblocks bindings
   storage/              R2 signed URL helpers
   billing/              Stripe helpers, plan limits
@@ -99,6 +98,28 @@ const user = await getUserByClerkId(clerkId) // lib/db/queries/users.ts
 **Clerk webhook** — `POST /api/webhooks/clerk` handles `user.created` (creates user row + personal "My Projects" workspace in a single transaction) and `user.updated`. The handler is idempotent: if the user row already exists it returns early, so Clerk retries are safe.
 
 **`@` path alias** — resolves to the project root (not `src/`). Import as `@/lib/...`, `@/components/...`, etc.
+
+---
+
+## Audio engine
+
+`lib/audio/audio-engine.ts` exports a **module-level singleton** (`audioEngine`). Every client component shares the same instance — there is no React context or prop drilling. The engine is stateful across route navigations; `unloadAllTracks()` must be called on project unmount (done in `ProjectTransport`'s cleanup effect).
+
+**State machine**: `idle → loading → idle` (decode), `idle/paused → playing → idle/paused` (playback). `play()` and `pause()` are no-ops in the wrong state to prevent double-scheduling.
+
+**Position formula** (used by both `ProjectTransport` and `Playhead`):
+
+```
+position = _pausedOffset + max(0, ctx.currentTime − _startedAt)
+```
+
+`_startedAt = ctx.currentTime + LOOKAHEAD` at play() time, so `position` stays 0 during the lookahead window.
+
+**Per-frame UI updates** — never use React state for position/playhead updates that fire 60× per second. Write directly to a DOM ref via a RAF loop, as `ProjectTransport` does with `positionSpanRef`. This pattern must be replicated in `Playhead`.
+
+**Safari resampling** — every decoded buffer is normalised to 48 kHz via `OfflineAudioContext`. Safari ignores `{ sampleRate: 48000 }` in the `AudioContext` constructor; the resample path handles it silently (see DECISIONS.md).
+
+**Testing the engine** — because it's a singleton, each test's `beforeEach` must manually clear all internal Maps/Sets (`_bufferCache`, `_trackToFile`, `_activeSources`, `_trackGains`, etc.) and reset `_pausedOffset`/`_startedAt` to 0. See `tests/unit/audio-engine.test.ts` for the full reset block and the `internals()` cast pattern.
 
 ---
 
@@ -143,6 +164,9 @@ pnpm db:studio        # browse the dev DB
 - **In `@clerk/nextjs` v5, `auth` inside `clerkMiddleware` is a function, not an object** — the correct call is `auth().protect()`, not `auth.protect()`. The object form (`auth.protect`) only exists in v6+, which requires Next.js 15. Always verify against the installed minor before changing this.
 - Drizzle's lib/db/migrations/ and other auto-generated artifacts must be in .prettierignore — otherwise lint-staged formats them on every commit and occasionally trips a stash/restore collision that leaves files renamed with " 2" suffixes. The pre-commit hook uses `--no-stash` to prevent this entirely.
 - Clerk's User API Keys feature is enabled by default — toggle off in Clerk Dashboard → Configure → User & authentication unless you actually want end users generating personal API tokens.
+- **Wavesurfer.js v7 API changed significantly from v6** — peaks are passed as `peaks: [Float32Array]` (array of arrays, one per channel), and internal playback must be disabled with `interact: false` plus no `media` element. Always check context7 for current v7 docs before writing Wavesurfer code.
+- **`audioEngine` is a singleton — tests must reset internals in `beforeEach`** — failing to clear `_trackToFile`, `_bufferCache`, `_activeSources`, etc. between tests causes state bleed. See `tests/unit/audio-engine.test.ts` for the canonical reset block.
+- **`seek()` on the engine during playback must clear `onended` before stopping sources** — same guard as `pause()` and `stop()`. Otherwise the synchronous `onended` from `stop()` can flip state back to `idle` after `seek()` has already set it to `playing`.
 
 ---
 
