@@ -270,6 +270,7 @@ class AudioEngine {
 
   setSoloed(trackId: string, soloed: boolean): void {
     if (soloed) {
+      this._soloedTracks.clear()
       this._soloedTracks.add(trackId)
     } else {
       this._soloedTracks.delete(trackId)

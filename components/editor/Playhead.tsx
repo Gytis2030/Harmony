@@ -31,7 +31,7 @@ export default function Playhead() {
   return (
     <div
       ref={lineRef}
-      className="pointer-events-none absolute bottom-0 top-0 w-0.5 bg-primary"
+      className="pointer-events-none absolute bottom-0 top-0 w-0.5 bg-[#a78bfa] shadow-[0_0_12px_rgba(167,139,250,0.65)]"
       style={{ display: 'none' }}
     />
   )

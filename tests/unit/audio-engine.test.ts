@@ -247,8 +247,8 @@ describe('AudioEngine', () => {
     expect(internals()._trackGains.get(TRACK_B)!.gain.value).toBe(0)
   })
 
-  // Test 9b — Solo A and B: both play at their volumes
-  it('solo A + B → both play at their volumes', () => {
+  // Test 9b — Solo B after A: B becomes the only audible soloed track
+  it('solo B after A → A gain = 0, B gain = volume', () => {
     const TRACK_A = 'dual-a',
       FILE_A = 'dual-file-a'
     const TRACK_B = 'dual-b',
@@ -261,12 +261,13 @@ describe('AudioEngine', () => {
     audioEngine.setSoloed(TRACK_A, true)
     audioEngine.setSoloed(TRACK_B, true)
 
-    expect(internals()._trackGains.get(TRACK_A)!.gain.value).toBe(0.8)
+    expect(internals()._trackGains.get(TRACK_A)!.gain.value).toBe(0)
     expect(internals()._trackGains.get(TRACK_B)!.gain.value).toBe(0.6)
+    expect(internals()._soloedTracks).toEqual(new Set([TRACK_B]))
   })
 
-  // Test 9c — Unsolo A while B still soloed: A goes silent, B stays
-  it('unsolo A while B soloed → A = 0, B = volume', () => {
+  // Test 9c — Unsolo the active soloed track: all tracks return to their volumes
+  it('unsolo active soloed track → all tracks return to volume', () => {
     const TRACK_A = 'un-a',
       FILE_A = 'un-file-a'
     const TRACK_B = 'un-b',
@@ -278,10 +279,11 @@ describe('AudioEngine', () => {
 
     audioEngine.setSoloed(TRACK_A, true)
     audioEngine.setSoloed(TRACK_B, true)
-    audioEngine.setSoloed(TRACK_A, false) // unsolo A
+    audioEngine.setSoloed(TRACK_B, false)
 
-    expect(internals()._trackGains.get(TRACK_A)!.gain.value).toBe(0)
+    expect(internals()._trackGains.get(TRACK_A)!.gain.value).toBe(0.8)
     expect(internals()._trackGains.get(TRACK_B)!.gain.value).toBe(0.6)
+    expect(internals()._soloedTracks.size).toBe(0)
   })
 
   // Test 9d — Unsolo last: all tracks return to their volumes
@@ -300,6 +302,24 @@ describe('AudioEngine', () => {
 
     expect(internals()._trackGains.get(TRACK_A)!.gain.value).toBe(0.8)
     expect(internals()._trackGains.get(TRACK_B)!.gain.value).toBe(0.6)
+  })
+
+  // Test 9e — Muted soloed track stays silent
+  it('soloed muted track stays silent', () => {
+    const TRACK_A = 'muted-solo-a',
+      FILE_A = 'muted-solo-file-a'
+    const TRACK_B = 'muted-solo-b',
+      FILE_B = 'muted-solo-file-b'
+    internals()._trackToFile.set(TRACK_A, FILE_A)
+    internals()._trackToFile.set(TRACK_B, FILE_B)
+    audioEngine.setVolume(TRACK_A, 0.8)
+    audioEngine.setVolume(TRACK_B, 0.6)
+    audioEngine.setMuted(TRACK_A, true)
+
+    audioEngine.setSoloed(TRACK_A, true)
+
+    expect(internals()._trackGains.get(TRACK_A)!.gain.value).toBe(0)
+    expect(internals()._trackGains.get(TRACK_B)!.gain.value).toBe(0)
   })
 
   // Test 10 — Master volume
