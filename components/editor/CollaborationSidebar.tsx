@@ -52,10 +52,11 @@ function formatRelativeDate(isoString: string): string {
   const now = new Date()
   const diffMs = now.getTime() - date.getTime()
   const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
-  if (diffDays === 0) return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  if (diffDays === 0)
+    return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
   if (diffDays === 1) return 'Yesterday'
   if (diffDays < 7) return `${diffDays}d ago`
-  return date.toLocaleDateString([], { month: 'short', day: 'numeric' })
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 
 function CommentAvatar({ name, size = 'md' }: { name: string; size?: 'sm' | 'md' }) {
@@ -454,7 +455,7 @@ function ThreadView({
         <CommentAvatar name={comment.authorName} />
         <div className="min-w-0 flex-1">
           <div className="flex items-center justify-between gap-2">
-            <p className="text-xs font-semibold text-slate-200">{comment.authorName}</p>
+            <p className="truncate text-xs font-semibold text-slate-200">{comment.authorName}</p>
             <p className="shrink-0 text-[10px] text-slate-600">
               {formatRelativeDate(comment.createdAt)}
             </p>
@@ -473,7 +474,9 @@ function ThreadView({
               <CommentAvatar name={reply.authorName} size="sm" />
               <div className="min-w-0 flex-1">
                 <div className="flex items-center justify-between gap-2">
-                  <p className="text-[11px] font-semibold text-slate-300">{reply.authorName}</p>
+                  <p className="truncate text-[11px] font-semibold text-slate-300">
+                    {reply.authorName}
+                  </p>
                   <p className="shrink-0 text-[10px] text-slate-600">
                     {formatRelativeDate(reply.createdAt)}
                   </p>
@@ -612,7 +615,9 @@ function CommentList({
               <div className="min-w-0 flex-1">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
-                    <p className="text-xs font-semibold text-slate-200">{comment.authorName}</p>
+                    <p className="truncate text-xs font-semibold text-slate-200">
+                      {comment.authorName}
+                    </p>
                     <div className="mt-0.5 flex items-center gap-1.5 text-[10px] text-slate-500">
                       <span className="rounded bg-white/[0.06] px-1 py-0.5 font-medium">
                         {comment.trackName ?? 'Project'}

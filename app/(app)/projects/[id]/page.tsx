@@ -1,7 +1,5 @@
 import { auth } from '@clerk/nextjs/server'
-import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
-import { ArrowLeft, Circle } from 'lucide-react'
 import { getUserByClerkId } from '@/lib/db/queries/users'
 import { getProjectById } from '@/lib/db/queries/projects'
 import { getTracksForProject } from '@/lib/db/queries/tracks'
@@ -37,41 +35,9 @@ export default async function ProjectEditorPage({ params }: Props) {
 
   return (
     <main className="min-h-screen bg-[#07070b] text-slate-100">
-      <header className="flex min-h-16 items-center justify-between border-b border-white/10 bg-[#0c0c12]/95 px-4 backdrop-blur sm:px-6">
-        <div className="flex min-w-0 items-center gap-4">
-          <Link
-            href="/dashboard"
-            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-white/10 text-slate-400 transition hover:border-white/20 hover:bg-white/5 hover:text-white"
-            aria-label="Back to dashboard"
-          >
-            <ArrowLeft className="h-4 w-4" />
-          </Link>
-          <div className="min-w-0">
-            <h1 className="truncate text-base font-semibold text-white sm:text-lg">
-              {project.name}
-            </h1>
-            <div className="mt-1 flex items-center gap-2 text-xs text-slate-500">
-              <Circle className="h-2 w-2 fill-emerald-400 text-emerald-400" />
-              <span>Saved</span>
-              <span className="hidden sm:inline">Local session</span>
-            </div>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <div className="hidden text-right text-xs text-slate-500 sm:block">
-            <p className="font-medium uppercase tracking-wide text-slate-400">Collaborators</p>
-            <p>Presence coming soon</p>
-          </div>
-          <div className="flex -space-x-2">
-            <div className="h-8 w-8 rounded-full border border-[#7c3aed]/40 bg-[#7c3aed]/25" />
-            <div className="h-8 w-8 rounded-full border border-white/10 bg-white/10" />
-          </div>
-        </div>
-      </header>
-
       <ProjectEditorWorkspace
         projectId={params.id}
+        projectName={project.name}
         tracks={tracks}
         comments={commentDtos}
         bpm={project.bpm}
