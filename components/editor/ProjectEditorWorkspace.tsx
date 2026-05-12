@@ -1,9 +1,10 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import ProjectTimeline from '@/components/editor/ProjectTimeline'
 import CollaborationSidebar, { type CommentTarget } from '@/components/editor/CollaborationSidebar'
 import type { CommentDto, CommentReplyDto } from '@/lib/actions/comments'
+import { audioEngine } from '@/lib/audio/audio-engine'
 
 type Track = {
   id: string
@@ -37,10 +38,31 @@ export default function ProjectEditorWorkspace({
   const [comments, setComments] = useState(initialComments)
   const [commentMode, setCommentMode] = useState(false)
   const [target, setTarget] = useState<CommentTarget | null>(null)
+  const [selectedCommentId, setSelectedCommentId] = useState<string | null>(null)
 
-  function startComment(target: CommentTarget) {
+  // Escape cancels comment mode (skip if a text field is focused)
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key !== 'Escape') return
+      const active = document.activeElement
+      if (active instanceof HTMLTextAreaElement || active instanceof HTMLInputElement) return
+      if (commentMode) cancelComment()
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [commentMode])
+
+  function handleCommentSelect(commentId: string | null) {
+    setSelectedCommentId(commentId)
+    if (commentId) {
+      const comment = comments.find((c) => c.id === commentId)
+      if (comment) audioEngine.seek(comment.timestampSeconds)
+    }
+  }
+
+  function startComment(t: CommentTarget) {
     setCommentMode(true)
-    setTarget(target)
+    setTarget(t)
   }
 
   function cancelComment() {
@@ -53,23 +75,22 @@ export default function ProjectEditorWorkspace({
       [...current, comment].sort((a, b) => a.timestampSeconds - b.timestampSeconds)
     )
     cancelComment()
+    setSelectedCommentId(comment.id)
   }
 
   function handleCommentUpdated(comment: CommentDto) {
     setComments((current) =>
       current.map((item) =>
         item.id === comment.id
-          ? {
-              ...comment,
-              replies: comment.replies.length > 0 ? comment.replies : item.replies,
-            }
+          ? { ...comment, replies: comment.replies.length > 0 ? comment.replies : item.replies }
           : item
       )
     )
   }
 
   function handleCommentDeleted(commentId: string) {
-    setComments((current) => current.filter((comment) => comment.id !== commentId))
+    setComments((current) => current.filter((c) => c.id !== commentId))
+    setSelectedCommentId((current) => (current === commentId ? null : current))
   }
 
   function handleReplyCreated(reply: CommentReplyDto) {
@@ -91,12 +112,14 @@ export default function ProjectEditorWorkspace({
         bpm={bpm}
         timeSignature={timeSignature}
         commentMode={commentMode}
+        selectedCommentId={selectedCommentId}
         onProjectCommentTarget={(timestampSeconds) =>
           startComment({ trackId: null, trackName: null, timestampSeconds })
         }
         onTrackCommentTarget={(trackId, trackName, timestampSeconds) =>
           startComment({ trackId, trackName, timestampSeconds })
         }
+        onCommentSelect={handleCommentSelect}
       />
 
       <CollaborationSidebar
@@ -104,6 +127,7 @@ export default function ProjectEditorWorkspace({
         comments={comments}
         commentMode={commentMode}
         target={target}
+        selectedCommentId={selectedCommentId}
         onStartCommentMode={() => {
           setCommentMode(true)
           setTarget(null)
@@ -114,6 +138,7 @@ export default function ProjectEditorWorkspace({
         onCommentUpdated={handleCommentUpdated}
         onCommentDeleted={handleCommentDeleted}
         onReplyCreated={handleReplyCreated}
+        onCommentSelect={handleCommentSelect}
       />
     </div>
   )

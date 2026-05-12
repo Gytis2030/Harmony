@@ -21,9 +21,11 @@ interface Props {
   projectDuration: number
   comments: CommentDto[]
   commentMode: boolean
+  selectedCommentId: string | null
   onTrackLoaded: (trackId: string, duration: number) => void
   onSoloChange: (trackId: string) => void
   onCommentTarget: (trackId: string, trackName: string, timestampSeconds: number) => void
+  onCommentSelect: (commentId: string) => void
 }
 
 interface RowState {
@@ -81,9 +83,11 @@ export default function TrackRow({
   projectDuration,
   comments,
   commentMode,
+  selectedCommentId,
   onTrackLoaded,
   onSoloChange,
   onCommentTarget,
+  onCommentSelect,
 }: Props) {
   const [state, dispatch] = useReducer(reducer, {
     engineState: 'idle',
@@ -107,7 +111,6 @@ export default function TrackRow({
     return audioEngine.subscribe((s) => dispatch({ type: 'engine_state', payload: s }))
   }, [])
 
-  // Fetch signed URL and decode on mount
   useEffect(() => {
     async function load() {
       try {
@@ -271,22 +274,33 @@ export default function TrackRow({
           />
         )}
         {projectDuration > 0 &&
-          comments.map((comment) => (
-            <button
-              key={comment.id}
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation()
-                audioEngine.seek(comment.timestampSeconds)
-              }}
-              className="absolute top-2 z-20 inline-flex h-6 w-6 -translate-x-1/2 items-center justify-center rounded-full border border-white/20 bg-[#141421] text-violet-100 shadow-[0_0_14px_rgba(124,58,237,0.35)] transition hover:border-violet-300/60 hover:bg-[#7c3aed]"
-              style={{ left: `${(comment.timestampSeconds / projectDuration) * 100}%` }}
-              aria-label={`Seek to comment at ${formatDuration(comment.timestampSeconds)}`}
-              title={comment.body}
-            >
-              <MessageSquare className="h-3.5 w-3.5" />
-            </button>
-          ))}
+          comments.map((comment) => {
+            const isSelected = selectedCommentId === comment.id
+            const isResolved = comment.status === 'resolved'
+            return (
+              <button
+                key={comment.id}
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onCommentSelect(comment.id)
+                }}
+                className={[
+                  'absolute top-2 z-20 inline-flex h-6 w-6 -translate-x-1/2 items-center justify-center rounded-full border transition',
+                  isSelected
+                    ? 'scale-110 border-violet-400 bg-[#7c3aed] text-white shadow-[0_0_18px_rgba(124,58,237,0.75)]'
+                    : isResolved
+                      ? 'border-white/10 bg-[#111120] text-slate-500 opacity-50 hover:opacity-80 hover:text-slate-400'
+                      : 'border-white/20 bg-[#141421] text-violet-100 shadow-[0_0_14px_rgba(124,58,237,0.35)] hover:border-violet-300/60 hover:bg-[#7c3aed]',
+                ].join(' ')}
+                style={{ left: `${(comment.timestampSeconds / projectDuration) * 100}%` }}
+                aria-label={`Open comment at ${formatDuration(comment.timestampSeconds)}`}
+                title={comment.body}
+              >
+                <MessageSquare className="h-3.5 w-3.5" />
+              </button>
+            )
+          })}
       </div>
     </div>
   )

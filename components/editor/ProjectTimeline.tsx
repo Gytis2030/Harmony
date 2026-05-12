@@ -1,7 +1,7 @@
 'use client'
 
 import type { CSSProperties } from 'react'
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import ProjectTransport from '@/components/editor/ProjectTransport'
 import TrackRow from '@/components/editor/TrackRow'
 import Playhead from '@/components/editor/Playhead'
@@ -30,8 +30,10 @@ interface Props {
   bpm: number | null
   timeSignature: string
   commentMode: boolean
+  selectedCommentId: string | null
   onProjectCommentTarget: (timestampSeconds: number) => void
   onTrackCommentTarget: (trackId: string, trackName: string, timestampSeconds: number) => void
+  onCommentSelect: (commentId: string | null) => void
 }
 
 const ZOOM_LEVELS = [1, 1.5, 2, 3] as const
@@ -50,6 +52,8 @@ function buildMarkers(duration: number): number[] {
   return markers
 }
 
+const TRACK_LABEL_WIDTH = 256
+
 export default function ProjectTimeline({
   projectId,
   tracks,
@@ -57,12 +61,16 @@ export default function ProjectTimeline({
   bpm,
   timeSignature,
   commentMode,
+  selectedCommentId,
   onProjectCommentTarget,
   onTrackCommentTarget,
+  onCommentSelect,
 }: Props) {
   const [zoomIndex, setZoomIndex] = useState(0)
   const [trackDurations, setTrackDurations] = useState<Record<string, number>>({})
   const [soloedTrackId, setSoloedTrackId] = useState<string | null>(null)
+
+  const scrollRef = useRef<HTMLDivElement>(null)
 
   const zoom = ZOOM_LEVELS[zoomIndex]
   const hasAudioTracks = tracks.some((track) => track.audioFile)
@@ -81,6 +89,19 @@ export default function ProjectTimeline({
   const handleSoloChange = useCallback((trackId: string) => {
     setSoloedTrackId((current) => (current === trackId ? null : trackId))
   }, [])
+
+  // Scroll selected comment's timestamp into view when zoom > 1
+  useEffect(() => {
+    if (!selectedCommentId || !scrollRef.current || duration <= 0 || zoom <= 1) return
+    const comment = comments.find((c) => c.id === selectedCommentId)
+    if (!comment) return
+
+    const container = scrollRef.current
+    const waveformWidth = container.scrollWidth - TRACK_LABEL_WIDTH
+    const pinLeft = TRACK_LABEL_WIDTH + (comment.timestampSeconds / duration) * waveformWidth
+    const targetLeft = pinLeft - container.clientWidth / 2
+    container.scrollTo({ left: targetLeft, behavior: 'smooth' })
+  }, [selectedCommentId, comments, duration, zoom])
 
   const canZoomOut = zoomIndex > 0
   const canZoomIn = zoomIndex < ZOOM_LEVELS.length - 1
@@ -101,11 +122,7 @@ export default function ProjectTimeline({
         />
       </div>
 
-      {/*
-        The inner content grows with zoom. Labels and controls remain fixed-width,
-        so the waveform column expands and stays aligned with markers/playhead.
-      */}
-      <div className="h-[calc(100vh-9rem)] overflow-auto bg-[#08080d]">
+      <div ref={scrollRef} className="h-[calc(100vh-9rem)] overflow-auto bg-[#08080d]">
         <div
           className="relative flex flex-col"
           style={
@@ -121,7 +138,9 @@ export default function ProjectTimeline({
             markers={markers}
             comments={projectComments}
             commentMode={commentMode}
+            selectedCommentId={selectedCommentId}
             onCommentTarget={onProjectCommentTarget}
+            onCommentSelect={onCommentSelect}
           />
 
           {hasAudioTracks && markers.length > 0 && (
@@ -160,9 +179,11 @@ export default function ProjectTimeline({
                 projectDuration={duration}
                 comments={comments.filter((comment) => comment.trackId === track.id)}
                 commentMode={commentMode}
+                selectedCommentId={selectedCommentId}
                 onTrackLoaded={handleTrackLoaded}
                 onSoloChange={handleSoloChange}
                 onCommentTarget={onTrackCommentTarget}
+                onCommentSelect={onCommentSelect}
               />
             ) : (
               <div
