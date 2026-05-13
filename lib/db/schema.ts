@@ -169,15 +169,41 @@ export const commentReplies = pgTable(
   ]
 )
 
-export const projectVersions = pgTable('project_versions', {
-  id: uuid('id').defaultRandom().primaryKey(),
-  projectId: uuid('project_id')
-    .notNull()
-    .references(() => projects.id),
-  createdBy: uuid('created_by')
-    .notNull()
-    .references(() => users.id),
-  label: text('label'),
-  snapshot: jsonb('snapshot').notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-})
+export const projectVersions = pgTable(
+  'project_versions',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.id),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    name: text('name').notNull(),
+    description: text('description'),
+    projectTitle: text('project_title').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [index('project_versions_project_idx').on(t.projectId)]
+)
+
+export const projectVersionTracks = pgTable(
+  'project_version_tracks',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    versionId: uuid('version_id')
+      .notNull()
+      .references(() => projectVersions.id, { onDelete: 'cascade' }),
+    trackId: uuid('track_id').references(() => tracks.id),
+    name: text('name').notNull(),
+    position: integer('position').notNull(),
+    volume: real('volume').notNull(),
+    isMuted: boolean('is_muted').notNull(),
+    isSoloed: boolean('is_soloed').notNull(),
+    color: text('color'),
+    r2Key: text('r2_key'),
+    originalFilename: text('original_filename'),
+    durationSeconds: real('duration_seconds'),
+  },
+  (t) => [index('project_version_tracks_version_idx').on(t.versionId)]
+)

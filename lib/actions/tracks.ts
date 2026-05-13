@@ -1,7 +1,7 @@
 'use server'
 
 import { auth } from '@clerk/nextjs/server'
-import { and, count, eq } from 'drizzle-orm'
+import { and, count, eq, ne } from 'drizzle-orm'
 import { revalidatePath } from 'next/cache'
 import { db } from '@/lib/db'
 import { getUserByClerkId } from '@/lib/db/queries/users'
@@ -78,11 +78,16 @@ export async function updateTrackMix(params: {
   trackId: string
   volume?: number
   isMuted?: boolean
+  isSoloed?: boolean
 }) {
   const { userId: clerkId } = auth()
   if (!clerkId) throw new Error('Unauthorized')
 
-  if (params.volume === undefined && params.isMuted === undefined) {
+  if (
+    params.volume === undefined &&
+    params.isMuted === undefined &&
+    params.isSoloed === undefined
+  ) {
     throw new Error('No mix changes provided')
   }
 
@@ -112,13 +117,22 @@ export async function updateTrackMix(params: {
   if (!membership) throw new Error('Forbidden')
 
   const values: Partial<typeof tracks.$inferInsert> = { updatedAt: new Date() }
-  if (params.volume !== undefined) {
-    values.volume = Math.max(0, Math.min(1, params.volume))
-  }
-  if (params.isMuted !== undefined) {
-    values.isMuted = params.isMuted
+  if (params.volume !== undefined) values.volume = Math.max(0, Math.min(1, params.volume))
+  if (params.isMuted !== undefined) values.isMuted = params.isMuted
+  if (params.isSoloed !== undefined) values.isSoloed = params.isSoloed
+
+  if (params.isSoloed === true) {
+    // Solo is mutually exclusive — clear all other tracks in the project first.
+    await db.transaction(async (tx) => {
+      await tx
+        .update(tracks)
+        .set({ isSoloed: false, updatedAt: new Date() })
+        .where(and(eq(tracks.projectId, row.projectId), ne(tracks.id, params.trackId)))
+      await tx.update(tracks).set(values).where(eq(tracks.id, params.trackId))
+    })
+  } else {
+    await db.update(tracks).set(values).where(eq(tracks.id, params.trackId))
   }
 
-  await db.update(tracks).set(values).where(eq(tracks.id, params.trackId))
   revalidatePath(`/projects/${row.projectId}`)
 }

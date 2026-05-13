@@ -14,6 +14,7 @@ type Track = {
   name: string
   volume: number
   isMuted: boolean
+  isSoloed: boolean
   color: string | null
   audioFile: {
     id: string
@@ -31,6 +32,8 @@ interface Props {
   timeSignature: string
   commentMode: boolean
   selectedCommentId: string | null
+  soloedTrackId: string | null
+  onSoloChange: (trackId: string) => void
   onProjectCommentTarget: (timestampSeconds: number) => void
   onTrackCommentTarget: (trackId: string, trackName: string, timestampSeconds: number) => void
   onCommentSelect: (commentId: string | null) => void
@@ -62,13 +65,14 @@ export default function ProjectTimeline({
   timeSignature,
   commentMode,
   selectedCommentId,
+  soloedTrackId,
+  onSoloChange,
   onProjectCommentTarget,
   onTrackCommentTarget,
   onCommentSelect,
 }: Props) {
   const [zoomIndex, setZoomIndex] = useState(0)
   const [trackDurations, setTrackDurations] = useState<Record<string, number>>({})
-  const [soloedTrackId, setSoloedTrackId] = useState<string | null>(null)
 
   const scrollRef = useRef<HTMLDivElement>(null)
 
@@ -84,10 +88,6 @@ export default function ProjectTimeline({
       if (current[trackId] === nextDuration) return current
       return { ...current, [trackId]: nextDuration }
     })
-  }, [])
-
-  const handleSoloChange = useCallback((trackId: string) => {
-    setSoloedTrackId((current) => (current === trackId ? null : trackId))
   }, [])
 
   // Scroll selected comment's timestamp into view when zoom > 1
@@ -181,7 +181,7 @@ export default function ProjectTimeline({
                 commentMode={commentMode}
                 selectedCommentId={selectedCommentId}
                 onTrackLoaded={handleTrackLoaded}
-                onSoloChange={handleSoloChange}
+                onSoloChange={onSoloChange}
                 onCommentTarget={onTrackCommentTarget}
                 onCommentSelect={onCommentSelect}
               />

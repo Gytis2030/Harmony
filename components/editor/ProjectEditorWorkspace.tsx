@@ -2,12 +2,14 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { ArrowLeft, Circle } from 'lucide-react'
 import ProjectTimeline from '@/components/editor/ProjectTimeline'
 import CollaborationSidebar, { type CommentTarget } from '@/components/editor/CollaborationSidebar'
 import PresenceAvatars from '@/components/editor/PresenceAvatars'
 import type { CommentDto, CommentReplyDto } from '@/lib/actions/comments'
 import { fetchProjectComments } from '@/lib/actions/comments'
+import type { RestoredTrackMix, VersionDto } from '@/lib/actions/versions'
 import { audioEngine } from '@/lib/audio/audio-engine'
 import { RoomProvider, useEventListener } from '@/lib/realtime/liveblocks'
 
@@ -16,6 +18,7 @@ type Track = {
   name: string
   volume: number
   isMuted: boolean
+  isSoloed: boolean
   color: string | null
   audioFile: {
     id: string
@@ -30,11 +33,11 @@ interface Props {
   projectName: string
   tracks: Track[]
   comments: CommentDto[]
+  versions: VersionDto[]
   bpm: number | null
   timeSignature: string
 }
 
-// Outer component: only responsible for the Liveblocks room boundary.
 export default function ProjectEditorWorkspace(props: Props) {
   return (
     <RoomProvider id={`project:${props.projectId}`} initialPresence={{}}>
@@ -47,15 +50,27 @@ export default function ProjectEditorWorkspace(props: Props) {
 function ProjectEditorInner({
   projectId,
   projectName,
-  tracks,
+  tracks: initialTracks,
   comments: initialComments,
+  versions: initialVersions,
   bpm,
   timeSignature,
 }: Props) {
+  const router = useRouter()
   const [comments, setComments] = useState(initialComments)
+  const [versions, setVersions] = useState(initialVersions)
+  const [tracks, setTracks] = useState(initialTracks)
+  const [soloedTrackId, setSoloedTrackId] = useState<string | null>(
+    () => initialTracks.find((t) => t.isSoloed)?.id ?? null
+  )
   const [commentMode, setCommentMode] = useState(false)
   const [target, setTarget] = useState<CommentTarget | null>(null)
   const [selectedCommentId, setSelectedCommentId] = useState<string | null>(null)
+
+  // When router.refresh() brings updated server data (e.g. after a new upload), sync tracks state.
+  useEffect(() => {
+    setTracks(initialTracks)
+  }, [initialTracks])
 
   // When another collaborator mutates comments, re-fetch from DB.
   // Liveblocks does not echo events back to the sender, so only remote changes
@@ -130,6 +145,28 @@ function ProjectEditorInner({
     )
   }
 
+  function handleVersionCreated(version: VersionDto) {
+    setVersions((current) => [version, ...current])
+  }
+
+  function handleRestoreComplete(safetySnapshot: VersionDto, restoredTracks: RestoredTrackMix[]) {
+    setVersions((current) => [safetySnapshot, ...current])
+    setTracks((current) =>
+      current.map((t) => {
+        const restored = restoredTracks.find((r) => r.id === t.id)
+        if (!restored) return t
+        return {
+          ...t,
+          volume: restored.volume,
+          isMuted: restored.isMuted,
+          isSoloed: restored.isSoloed,
+        }
+      })
+    )
+    setSoloedTrackId(restoredTracks.find((r) => r.isSoloed)?.id ?? null)
+    router.refresh()
+  }
+
   return (
     <>
       <header className="flex min-h-16 items-center justify-between border-b border-white/10 bg-[#0c0c12]/95 px-4 backdrop-blur sm:px-6">
@@ -165,6 +202,10 @@ function ProjectEditorInner({
           timeSignature={timeSignature}
           commentMode={commentMode}
           selectedCommentId={selectedCommentId}
+          soloedTrackId={soloedTrackId}
+          onSoloChange={(trackId) =>
+            setSoloedTrackId((current) => (current === trackId ? null : trackId))
+          }
           onProjectCommentTarget={(timestampSeconds) =>
             startComment({ trackId: null, trackName: null, timestampSeconds })
           }
@@ -180,6 +221,7 @@ function ProjectEditorInner({
           commentMode={commentMode}
           target={target}
           selectedCommentId={selectedCommentId}
+          versions={versions}
           onStartCommentMode={() => {
             setCommentMode(true)
             setTarget(null)
@@ -191,6 +233,8 @@ function ProjectEditorInner({
           onCommentDeleted={handleCommentDeleted}
           onReplyCreated={handleReplyCreated}
           onCommentSelect={handleCommentSelect}
+          onVersionCreated={handleVersionCreated}
+          onRestoreComplete={handleRestoreComplete}
         />
       </div>
     </>

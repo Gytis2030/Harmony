@@ -40,6 +40,7 @@ type Action =
   | { type: 'engine_state'; payload: EngineState }
   | { type: 'set_volume'; payload: number }
   | { type: 'toggle_mute' }
+  | { type: 'set_muted'; payload: boolean }
   | { type: 'load_error'; payload: string }
   | { type: 'load_success'; payload: AudioBuffer }
 
@@ -51,6 +52,8 @@ function reducer(state: RowState, action: Action): RowState {
       return { ...state, volume: action.payload }
     case 'toggle_mute':
       return { ...state, muted: !state.muted }
+    case 'set_muted':
+      return { ...state, muted: action.payload }
     case 'load_error':
       return { ...state, engineState: 'idle', loadError: action.payload }
     case 'load_success':
@@ -99,6 +102,7 @@ export default function TrackRow({
 
   const mountedRef = useRef(true)
   const didMountVolumeRef = useRef(false)
+  const prevInitialVolumeRef = useRef(initialVolume)
   const timelineRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     mountedRef.current = true
@@ -140,6 +144,21 @@ export default function TrackRow({
   }, [trackId, initialVolume, initialMuted])
 
   useEffect(() => {
+    audioEngine.setSoloed(trackId, soloed)
+  }, [trackId, soloed])
+
+  // Sync local UI state when props change from outside (e.g. after a version restore).
+  useEffect(() => {
+    if (prevInitialVolumeRef.current === initialVolume) return
+    prevInitialVolumeRef.current = initialVolume
+    dispatch({ type: 'set_volume', payload: initialVolume })
+  }, [initialVolume])
+
+  useEffect(() => {
+    dispatch({ type: 'set_muted', payload: initialMuted })
+  }, [initialMuted])
+
+  useEffect(() => {
     if (!didMountVolumeRef.current) {
       didMountVolumeRef.current = true
       return
@@ -169,6 +188,7 @@ export default function TrackRow({
     const next = !soloed
     audioEngine.setSoloed(trackId, next)
     onSoloChange(trackId)
+    void updateTrackMix({ trackId, isSoloed: next })
   }
 
   function handleTimelineClick(e: React.MouseEvent<HTMLDivElement>) {
