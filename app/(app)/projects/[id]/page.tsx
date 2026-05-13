@@ -1,15 +1,23 @@
 import { auth } from '@clerk/nextjs/server'
 import { notFound, redirect } from 'next/navigation'
 import { getUserByClerkId } from '@/lib/db/queries/users'
-import { getProjectById } from '@/lib/db/queries/projects'
+import {
+  getProjectByIdWithShareGrant,
+  getShareGrantForUser,
+  getActiveShareLinksForProject,
+} from '@/lib/db/queries/projects'
 import { getTracksForProject } from '@/lib/db/queries/tracks'
 import { getCommentsForProject } from '@/lib/db/queries/comments'
+import { getWorkspaceMembers, getWorkspacePendingInvites } from '@/lib/db/queries/workspaces'
 import { listVersions } from '@/lib/actions/versions'
+import type { ShareLinkDto } from '@/lib/actions/share-links'
 import ProjectEditorWorkspace from '@/components/editor/ProjectEditorWorkspace'
 
 interface Props {
   params: { id: string }
 }
+
+type Role = 'owner' | 'editor' | 'commenter' | 'viewer'
 
 export default async function ProjectEditorPage({ params }: Props) {
   const { userId: clerkId } = auth()
@@ -18,14 +26,87 @@ export default async function ProjectEditorPage({ params }: Props) {
   const user = await getUserByClerkId(clerkId)
   if (!user) redirect('/sign-in')
 
-  const project = await getProjectById(params.id, user.id)
+  const project = await getProjectByIdWithShareGrant(params.id, user.id)
   if (!project) notFound()
 
   const tracks = await getTracksForProject(params.id)
+  const allMembers = await getWorkspaceMembers(project.workspaceId)
+  const memberRecord = allMembers.find((m) => m.userId === user.id)
+
+  let currentUserRole: Role
+  let canComment: boolean
+  let canManageComments: boolean
+  let isWorkspaceMember: boolean
+  let memberDtos: {
+    userId: string
+    displayName: string
+    email: string
+    role: Role
+    joinedAt: string
+  }[] = []
+  let inviteDtos: {
+    id: string
+    workspaceId: string
+    email: string
+    role: Role
+    token: string
+    expiresAt: string
+    createdAt: string
+  }[] = []
+  let shareLinkDtos: ShareLinkDto[] = []
+
+  if (memberRecord) {
+    isWorkspaceMember = true
+    currentUserRole = memberRecord.role as Role
+    canComment = true
+    canManageComments = true
+
+    const [invites, shareLinks] = await Promise.all([
+      getWorkspacePendingInvites(project.workspaceId),
+      getActiveShareLinksForProject(params.id),
+    ])
+
+    memberDtos = allMembers.map((m) => ({
+      userId: m.userId,
+      displayName: m.displayName ?? m.email,
+      email: m.email,
+      role: m.role as Role,
+      joinedAt: m.joinedAt.toISOString(),
+    }))
+
+    inviteDtos = invites.map((inv) => ({
+      id: inv.id,
+      workspaceId: inv.workspaceId,
+      email: inv.email,
+      role: inv.role as Role,
+      token: inv.token,
+      expiresAt: inv.expiresAt.toISOString(),
+      createdAt: inv.createdAt.toISOString(),
+    }))
+
+    shareLinkDtos = shareLinks.map((l) => ({
+      id: l.id,
+      projectId: params.id,
+      accessLevel: l.accessLevel,
+      isActive: l.isActive,
+      createdAt: l.createdAt.toISOString(),
+    }))
+  } else {
+    const grant = await getShareGrantForUser(params.id, user.id)
+    if (!grant) notFound()
+
+    isWorkspaceMember = false
+    currentUserRole = grant.accessLevel === 'comment' ? 'commenter' : 'viewer'
+    canComment = grant.accessLevel === 'comment'
+    canManageComments = false
+    // memberDtos / inviteDtos / shareLinkDtos stay empty
+  }
+
   const [comments, versions] = await Promise.all([
     getCommentsForProject(params.id, user.id),
     listVersions(params.id),
   ])
+
   const commentDtos = comments.map((comment) => ({
     ...comment,
     createdAt: comment.createdAt.toISOString(),
@@ -42,9 +123,17 @@ export default async function ProjectEditorPage({ params }: Props) {
       <ProjectEditorWorkspace
         projectId={params.id}
         projectName={project.name}
+        workspaceId={project.workspaceId}
         tracks={tracks}
         comments={commentDtos}
         versions={versions}
+        members={memberDtos}
+        invites={inviteDtos}
+        shareLinks={shareLinkDtos}
+        currentUserRole={currentUserRole}
+        canComment={canComment}
+        canManageComments={canManageComments}
+        isWorkspaceMember={isWorkspaceMember}
         bpm={project.bpm}
         timeSignature={`${project.timeSignatureNumerator}/${project.timeSignatureDenominator}`}
       />

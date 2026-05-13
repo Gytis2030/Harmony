@@ -4,12 +4,15 @@ import { useState, useTransition } from 'react'
 import {
   ArrowLeft,
   Check,
+  Copy,
+  Link as LinkIcon,
   MessageSquarePlus,
   Pin,
   Plus,
   RotateCcw,
   Save,
   Trash2,
+  UserPlus,
   X,
 } from 'lucide-react'
 import {
@@ -21,6 +24,13 @@ import {
   type CommentDto,
   type CommentReplyDto,
 } from '@/lib/actions/comments'
+import { createInvite, revokeInvite, type InviteDto } from '@/lib/actions/invites'
+import {
+  createShareLink,
+  revokeShareLink,
+  type ShareLinkDto,
+  type ShareLinkCreatedDto,
+} from '@/lib/actions/share-links'
 import {
   createVersion,
   restoreVersion,
@@ -35,6 +45,7 @@ import {
 } from '@/lib/comments/filter'
 import { audioEngine } from '@/lib/audio/audio-engine'
 import { useBroadcastEvent } from '@/lib/realtime/liveblocks'
+import type { MemberDto } from '@/components/editor/ProjectEditorWorkspace'
 
 export type CommentTarget = {
   trackId: string | null
@@ -42,15 +53,25 @@ export type CommentTarget = {
   timestampSeconds: number
 }
 
-type SidebarTab = 'comments' | 'versions'
+type SidebarTab = 'comments' | 'versions' | 'people'
+
+type WorkspaceMemberRole = 'owner' | 'editor' | 'commenter' | 'viewer'
 
 interface Props {
   projectId: string
+  workspaceId: string
   comments: CommentDto[]
   commentMode: boolean
   target: CommentTarget | null
   selectedCommentId: string | null
   versions: VersionDto[]
+  members: MemberDto[]
+  invites: InviteDto[]
+  shareLinks: ShareLinkDto[]
+  currentUserRole: WorkspaceMemberRole
+  canComment: boolean
+  canManageComments: boolean
+  isWorkspaceMember: boolean
   onStartCommentMode: () => void
   onCancelComment: () => void
   onTargetChange: (target: CommentTarget) => void
@@ -61,6 +82,10 @@ interface Props {
   onCommentSelect: (commentId: string | null) => void
   onVersionCreated: (version: VersionDto) => void
   onRestoreComplete: (safetySnapshot: VersionDto, restoredTracks: RestoredTrackMix[]) => void
+  onInviteCreated: (invite: InviteDto) => void
+  onInviteRevoked: (inviteId: string) => void
+  onShareLinkCreated: (link: ShareLinkCreatedDto) => void
+  onShareLinkRevoked: (linkId: string) => void
 }
 
 function formatTime(seconds: number): string {
@@ -111,11 +136,19 @@ const FILTER_LABELS: Record<CommentFilter, string> = {
 
 export default function CollaborationSidebar({
   projectId,
+  workspaceId,
   comments,
   commentMode,
   target,
   selectedCommentId,
   versions,
+  members,
+  invites,
+  shareLinks,
+  currentUserRole,
+  canComment,
+  canManageComments,
+  isWorkspaceMember,
   onStartCommentMode,
   onCancelComment,
   onTargetChange,
@@ -126,6 +159,10 @@ export default function CollaborationSidebar({
   onCommentSelect,
   onVersionCreated,
   onRestoreComplete,
+  onInviteCreated,
+  onInviteRevoked,
+  onShareLinkCreated,
+  onShareLinkRevoked,
 }: Props) {
   const [activeTab, setActiveTab] = useState<SidebarTab>('comments')
   const [filter, setFilter] = useState<CommentFilter>('open')
@@ -149,6 +186,22 @@ export default function CollaborationSidebar({
   const [restoreConfirm, setRestoreConfirm] = useState(false)
   const [restoreError, setRestoreError] = useState<string | null>(null)
   const [isRestorePending, startRestoreTransition] = useTransition()
+
+  // Invite form state
+  const [inviteEmail, setInviteEmail] = useState('')
+  const [inviteRole, setInviteRole] = useState<WorkspaceMemberRole>('viewer')
+  const [inviteError, setInviteError] = useState<string | null>(null)
+  const [newInviteToken, setNewInviteToken] = useState<string | null>(null)
+  const [copiedToken, setCopiedToken] = useState<string | null>(null)
+  const [isInvitePending, startInviteTransition] = useTransition()
+  const [isRevokePending, startRevokeTransition] = useTransition()
+
+  // Share link state
+  const [newShareTokens, setNewShareTokens] = useState<Record<string, string>>({}) // accessLevel → rawToken
+  const [copiedShareLinkId, setCopiedShareLinkId] = useState<string | null>(null)
+  const [shareLinkError, setShareLinkError] = useState<string | null>(null)
+  const [isShareLinkPending, startShareLinkTransition] = useTransition()
+  const [isShareRevokePending, startShareRevokeTransition] = useTransition()
 
   const broadcast = useBroadcastEvent()
 
@@ -304,6 +357,96 @@ export default function CollaborationSidebar({
     })
   }
 
+  // ---- invite ----
+  function handleInviteSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    startInviteTransition(async () => {
+      setInviteError(null)
+      setNewInviteToken(null)
+      try {
+        const invite = await createInvite({ workspaceId, email: inviteEmail, role: inviteRole })
+        onInviteCreated(invite)
+        setInviteEmail('')
+        setNewInviteToken(invite.token)
+      } catch (err) {
+        setInviteError(err instanceof Error ? err.message : 'Could not create invite.')
+      }
+    })
+  }
+
+  function handleRevoke(inviteId: string) {
+    startRevokeTransition(async () => {
+      try {
+        await revokeInvite({ inviteId })
+        onInviteRevoked(inviteId)
+        if (newInviteToken) {
+          const revokedInvite = invites.find((i) => i.id === inviteId)
+          if (revokedInvite?.token === newInviteToken) setNewInviteToken(null)
+        }
+      } catch {
+        // silently ignore — UI state will stay until next refresh
+      }
+    })
+  }
+
+  function handleCopyLink(token: string) {
+    const url = `${window.location.origin}/invite/${token}?project=${projectId}`
+    navigator.clipboard.writeText(url).then(() => {
+      setCopiedToken(token)
+      setTimeout(() => setCopiedToken((cur) => (cur === token ? null : cur)), 2000)
+    })
+  }
+
+  const canInvite = currentUserRole === 'owner' || currentUserRole === 'editor'
+  const canManageLinks = currentUserRole === 'owner' || currentUserRole === 'editor'
+  const invitableRoles: WorkspaceMemberRole[] =
+    currentUserRole === 'owner' ? ['editor', 'commenter', 'viewer'] : ['commenter', 'viewer']
+
+  function handleCreateShareLink(accessLevel: 'view' | 'comment') {
+    startShareLinkTransition(async () => {
+      setShareLinkError(null)
+      try {
+        const link = await createShareLink({ projectId, accessLevel })
+        onShareLinkCreated(link)
+        setNewShareTokens((cur) => ({ ...cur, [accessLevel]: link.rawToken }))
+      } catch (err) {
+        setShareLinkError(err instanceof Error ? err.message : 'Could not create share link.')
+      }
+    })
+  }
+
+  function handleRevokeShareLink(linkId: string, accessLevel: string) {
+    startShareRevokeTransition(async () => {
+      try {
+        await revokeShareLink({ linkId })
+        onShareLinkRevoked(linkId)
+        setNewShareTokens((cur) => {
+          const next = { ...cur }
+          delete next[accessLevel]
+          return next
+        })
+      } catch {
+        // silently ignore
+      }
+    })
+  }
+
+  function handleCopyShareLink(accessLevel: string, rawToken: string, linkId: string) {
+    const url = `${window.location.origin}/share/${rawToken}`
+    navigator.clipboard.writeText(url).then(() => {
+      setCopiedShareLinkId(linkId)
+      setTimeout(() => setCopiedShareLinkId((cur) => (cur === linkId ? null : cur)), 2000)
+    })
+  }
+
+  function handleDismissShareToken(accessLevel: string) {
+    setNewShareTokens((cur) => {
+      const next = { ...cur }
+      delete next[accessLevel]
+      return next
+    })
+  }
+
   const filteredSorted = sortComments(filterComments(comments, filter))
 
   return (
@@ -336,6 +479,18 @@ export default function CollaborationSidebar({
           >
             Versions {versions.length > 0 ? `(${versions.length})` : ''}
           </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('people')}
+            className={[
+              'flex-1 py-2.5 text-xs font-semibold transition',
+              activeTab === 'people'
+                ? 'border-b-2 border-violet-500 text-white'
+                : 'text-slate-500 hover:text-slate-300',
+            ].join(' ')}
+          >
+            People {members.length > 0 ? `(${members.length})` : ''}
+          </button>
         </div>
 
         {/* comments tab sub-header */}
@@ -366,7 +521,7 @@ export default function CollaborationSidebar({
                 >
                   <X className="h-3.5 w-3.5" />
                 </button>
-              ) : !isThreadView ? (
+              ) : !isThreadView && canComment ? (
                 <button
                   type="button"
                   onClick={onStartCommentMode}
@@ -401,6 +556,18 @@ export default function CollaborationSidebar({
           </>
         )}
 
+        {/* people tab sub-header */}
+        {activeTab === 'people' && (
+          <div className="flex items-center justify-between px-4 py-3">
+            <span className="text-sm font-semibold text-slate-200">People</span>
+            {canInvite && (
+              <span className="text-[10px] text-slate-500">
+                {invites.length > 0 ? `${invites.length} pending` : ''}
+              </span>
+            )}
+          </div>
+        )}
+
         {/* versions tab sub-header */}
         {activeTab === 'versions' && (
           <div className="flex items-center justify-between px-4 py-3">
@@ -420,7 +587,7 @@ export default function CollaborationSidebar({
             ) : (
               <>
                 <span className="text-sm font-semibold text-slate-200">Versions</span>
-                {!versionFormOpen && (
+                {isWorkspaceMember && !versionFormOpen && (
                   <button
                     type="button"
                     onClick={() => {
@@ -520,6 +687,8 @@ export default function CollaborationSidebar({
                   replyError={replyError}
                   actionError={actionError}
                   isPending={isPending}
+                  canComment={canComment}
+                  canManageComments={canManageComments}
                   onReplyChange={setReplyBody}
                   onReplySubmit={handleReplySubmit}
                   onStatus={handleStatus}
@@ -541,11 +710,45 @@ export default function CollaborationSidebar({
             </>
           )}
 
+          {/* ── people tab content ── */}
+          {activeTab === 'people' && (
+            <PeopleTab
+              members={members}
+              invites={invites}
+              shareLinks={shareLinks}
+              canInvite={canInvite}
+              canManageLinks={canManageLinks}
+              invitableRoles={invitableRoles}
+              inviteEmail={inviteEmail}
+              inviteRole={inviteRole}
+              inviteError={inviteError}
+              shareLinkError={shareLinkError}
+              newInviteToken={newInviteToken}
+              copiedToken={copiedToken}
+              newShareTokens={newShareTokens}
+              copiedShareLinkId={copiedShareLinkId}
+              isInvitePending={isInvitePending}
+              isRevokePending={isRevokePending}
+              isShareLinkPending={isShareLinkPending}
+              isShareRevokePending={isShareRevokePending}
+              onEmailChange={setInviteEmail}
+              onRoleChange={setInviteRole}
+              onSubmit={handleInviteSubmit}
+              onCopy={handleCopyLink}
+              onRevoke={handleRevoke}
+              onDismissNewLink={() => setNewInviteToken(null)}
+              onCreateShareLink={handleCreateShareLink}
+              onRevokeShareLink={handleRevokeShareLink}
+              onCopyShareLink={handleCopyShareLink}
+              onDismissShareToken={handleDismissShareToken}
+            />
+          )}
+
           {/* ── versions tab content ── */}
           {activeTab === 'versions' && (
             <>
-              {/* inline save version form */}
-              {versionFormOpen && (
+              {/* inline save version form — workspace members only */}
+              {isWorkspaceMember && versionFormOpen && (
                 <form
                   onSubmit={handleVersionSubmit}
                   className="rounded border border-white/10 bg-black/25 p-3"
@@ -622,6 +825,7 @@ export default function CollaborationSidebar({
                   restoreConfirm={restoreConfirm}
                   restoreError={restoreError}
                   isPending={isRestorePending}
+                  canRestore={isWorkspaceMember}
                   onRestoreClick={() => setRestoreConfirm(true)}
                   onRestoreCancel={() => {
                     setRestoreConfirm(false)
@@ -657,6 +861,8 @@ interface ThreadViewProps {
   replyError: string | null
   actionError: string | null
   isPending: boolean
+  canComment: boolean
+  canManageComments: boolean
   onReplyChange: (value: string) => void
   onReplySubmit: (e: React.FormEvent, comment: CommentDto) => void
   onStatus: (comment: CommentDto, status: 'open' | 'resolved') => void
@@ -670,6 +876,8 @@ function ThreadView({
   replyError,
   actionError,
   isPending,
+  canComment,
+  canManageComments,
   onReplyChange,
   onReplySubmit,
   onStatus,
@@ -746,81 +954,87 @@ function ThreadView({
         </div>
       )}
 
-      {/* reply form */}
-      <form onSubmit={(e) => onReplySubmit(e, comment)}>
-        <textarea
-          value={replyBody}
-          onChange={(e) => onReplyChange(e.target.value)}
-          rows={2}
-          maxLength={2000}
-          className="w-full resize-none rounded border border-white/10 bg-[#09090f] px-3 py-2 text-sm text-slate-100 outline-none transition placeholder:text-slate-600 focus:border-[#7c3aed]/70"
-          placeholder="Write a reply…"
-          disabled={isPending}
-        />
-        {replyError && <p className="mt-1 text-xs text-red-300">{replyError}</p>}
-        <div className="mt-2 flex justify-end">
-          <button
-            type="submit"
-            disabled={isPending || replyBody.trim().length === 0}
-            className="rounded bg-[#7c3aed] px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-[#8b5cf6] disabled:opacity-50"
-          >
-            {isPending ? 'Saving…' : 'Reply'}
-          </button>
-        </div>
-      </form>
+      {/* reply form — only for users who can comment */}
+      {canComment && (
+        <form onSubmit={(e) => onReplySubmit(e, comment)}>
+          <textarea
+            value={replyBody}
+            onChange={(e) => onReplyChange(e.target.value)}
+            rows={2}
+            maxLength={2000}
+            className="w-full resize-none rounded border border-white/10 bg-[#09090f] px-3 py-2 text-sm text-slate-100 outline-none transition placeholder:text-slate-600 focus:border-[#7c3aed]/70"
+            placeholder="Write a reply…"
+            disabled={isPending}
+          />
+          {replyError && <p className="mt-1 text-xs text-red-300">{replyError}</p>}
+          <div className="mt-2 flex justify-end">
+            <button
+              type="submit"
+              disabled={isPending || replyBody.trim().length === 0}
+              className="rounded bg-[#7c3aed] px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-[#8b5cf6] disabled:opacity-50"
+            >
+              {isPending ? 'Saving…' : 'Reply'}
+            </button>
+          </div>
+        </form>
+      )}
 
-      {/* actions row */}
-      {actionError && <p className="text-xs text-red-300">{actionError}</p>}
-      <div className="flex items-center gap-2 border-t border-white/[0.06] pt-3">
-        <button
-          type="button"
-          onClick={() => onStatus(comment, isResolved ? 'open' : 'resolved')}
-          disabled={isPending}
-          className={[
-            'inline-flex items-center gap-1.5 rounded border px-2.5 py-1.5 text-xs font-semibold transition disabled:opacity-50',
-            isResolved
-              ? 'border-white/10 text-slate-400 hover:bg-white/5 hover:text-white'
-              : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200 hover:bg-emerald-500/20',
-          ].join(' ')}
-        >
-          {isResolved ? (
-            <>
-              <RotateCcw className="h-3 w-3" />
-              Reopen
-            </>
-          ) : (
-            <>
-              <Check className="h-3 w-3" />
-              Resolve
-            </>
-          )}
-        </button>
+      {/* actions row — only for workspace members who can manage comments */}
+      {canManageComments && (
+        <>
+          {actionError && <p className="text-xs text-red-300">{actionError}</p>}
+          <div className="flex items-center gap-2 border-t border-white/[0.06] pt-3">
+            <button
+              type="button"
+              onClick={() => onStatus(comment, isResolved ? 'open' : 'resolved')}
+              disabled={isPending}
+              className={[
+                'inline-flex items-center gap-1.5 rounded border px-2.5 py-1.5 text-xs font-semibold transition disabled:opacity-50',
+                isResolved
+                  ? 'border-white/10 text-slate-400 hover:bg-white/5 hover:text-white'
+                  : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200 hover:bg-emerald-500/20',
+              ].join(' ')}
+            >
+              {isResolved ? (
+                <>
+                  <RotateCcw className="h-3 w-3" />
+                  Reopen
+                </>
+              ) : (
+                <>
+                  <Check className="h-3 w-3" />
+                  Resolve
+                </>
+              )}
+            </button>
 
-        <button
-          type="button"
-          onClick={() => onPinned(comment)}
-          disabled={isPending}
-          className={[
-            'inline-flex items-center gap-1.5 rounded border px-2.5 py-1.5 text-xs font-semibold transition disabled:opacity-50',
-            comment.isPinned
-              ? 'border-violet-400/30 bg-violet-400/10 text-violet-200 hover:bg-violet-400/20'
-              : 'border-white/10 text-slate-400 hover:bg-white/5 hover:text-white',
-          ].join(' ')}
-        >
-          <Pin className="h-3 w-3" />
-          {comment.isPinned ? 'Unpin' : 'Pin'}
-        </button>
+            <button
+              type="button"
+              onClick={() => onPinned(comment)}
+              disabled={isPending}
+              className={[
+                'inline-flex items-center gap-1.5 rounded border px-2.5 py-1.5 text-xs font-semibold transition disabled:opacity-50',
+                comment.isPinned
+                  ? 'border-violet-400/30 bg-violet-400/10 text-violet-200 hover:bg-violet-400/20'
+                  : 'border-white/10 text-slate-400 hover:bg-white/5 hover:text-white',
+              ].join(' ')}
+            >
+              <Pin className="h-3 w-3" />
+              {comment.isPinned ? 'Unpin' : 'Pin'}
+            </button>
 
-        <button
-          type="button"
-          onClick={() => onDelete(comment)}
-          disabled={isPending}
-          className="ml-auto inline-flex h-7 w-7 items-center justify-center rounded border border-white/10 text-slate-500 transition hover:bg-red-400/10 hover:text-red-300 disabled:opacity-50"
-          aria-label="Delete comment"
-        >
-          <Trash2 className="h-3.5 w-3.5" />
-        </button>
-      </div>
+            <button
+              type="button"
+              onClick={() => onDelete(comment)}
+              disabled={isPending}
+              className="ml-auto inline-flex h-7 w-7 items-center justify-center rounded border border-white/10 text-slate-500 transition hover:bg-red-400/10 hover:text-red-300 disabled:opacity-50"
+              aria-label="Delete comment"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </>
+      )}
     </div>
   )
 }
@@ -979,6 +1193,7 @@ interface VersionDetailProps {
   restoreConfirm: boolean
   restoreError: string | null
   isPending: boolean
+  canRestore: boolean
   onRestoreClick: () => void
   onRestoreCancel: () => void
   onRestoreConfirm: () => void
@@ -989,6 +1204,7 @@ function VersionDetail({
   restoreConfirm,
   restoreError,
   isPending,
+  canRestore,
   onRestoreClick,
   onRestoreCancel,
   onRestoreConfirm,
@@ -1009,48 +1225,374 @@ function VersionDetail({
         </div>
       </div>
 
-      {/* restore section */}
-      <div className="border-t border-white/[0.06] pt-4">
-        {!restoreConfirm ? (
-          <button
-            type="button"
-            onClick={onRestoreClick}
-            disabled={isPending}
-            className="w-full rounded border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs font-semibold text-amber-200 transition hover:bg-amber-500/20 disabled:opacity-50"
-          >
-            Restore this version
-          </button>
-        ) : (
-          <div className="rounded border border-amber-500/30 bg-amber-500/8 p-3">
-            <p className="text-xs font-semibold text-amber-200">
-              Restore &ldquo;{version.name}&rdquo;?
-            </p>
-            <p className="mt-1.5 text-xs leading-4 text-slate-400">
-              Track mix settings will be updated to match this snapshot. A safety backup of the
-              current state will be saved automatically first.
-            </p>
-            {restoreError && <p className="mt-2 text-xs text-red-300">{restoreError}</p>}
-            <div className="mt-3 flex items-center gap-2">
-              <button
-                type="button"
-                onClick={onRestoreCancel}
-                disabled={isPending}
-                className="flex-1 rounded border border-white/10 px-3 py-1.5 text-xs font-semibold text-slate-400 transition hover:bg-white/5 hover:text-white disabled:opacity-50"
+      {/* restore section — workspace members only */}
+      {canRestore && (
+        <div className="border-t border-white/[0.06] pt-4">
+          {!restoreConfirm ? (
+            <button
+              type="button"
+              onClick={onRestoreClick}
+              disabled={isPending}
+              className="w-full rounded border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs font-semibold text-amber-200 transition hover:bg-amber-500/20 disabled:opacity-50"
+            >
+              Restore this version
+            </button>
+          ) : (
+            <div className="rounded border border-amber-500/30 bg-amber-500/8 p-3">
+              <p className="text-xs font-semibold text-amber-200">
+                Restore &ldquo;{version.name}&rdquo;?
+              </p>
+              <p className="mt-1.5 text-xs leading-4 text-slate-400">
+                Track mix settings will be updated to match this snapshot. A safety backup of the
+                current state will be saved automatically first.
+              </p>
+              {restoreError && <p className="mt-2 text-xs text-red-300">{restoreError}</p>}
+              <div className="mt-3 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={onRestoreCancel}
+                  disabled={isPending}
+                  className="flex-1 rounded border border-white/10 px-3 py-1.5 text-xs font-semibold text-slate-400 transition hover:bg-white/5 hover:text-white disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={onRestoreConfirm}
+                  disabled={isPending}
+                  className="flex-1 rounded bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-amber-500 disabled:opacity-50"
+                >
+                  {isPending ? 'Restoring…' : 'Confirm restore'}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────
+// People tab
+
+const ROLE_LABELS: Record<string, string> = {
+  owner: 'Owner',
+  editor: 'Editor',
+  commenter: 'Commenter',
+  viewer: 'Viewer',
+}
+
+const ROLE_COLORS: Record<string, string> = {
+  owner: 'bg-amber-500/20 text-amber-200',
+  editor: 'bg-violet-500/20 text-violet-200',
+  commenter: 'bg-sky-500/20 text-sky-200',
+  viewer: 'bg-slate-700/60 text-slate-300',
+}
+
+function RoleBadge({ role }: { role: string }) {
+  return (
+    <span
+      className={[
+        'inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold',
+        ROLE_COLORS[role] ?? 'bg-white/10 text-slate-300',
+      ].join(' ')}
+    >
+      {ROLE_LABELS[role] ?? role}
+    </span>
+  )
+}
+
+function daysUntil(isoString: string): number {
+  const diff = new Date(isoString).getTime() - Date.now()
+  return Math.max(0, Math.ceil(diff / (1000 * 60 * 60 * 24)))
+}
+
+interface PeopleTabProps {
+  members: MemberDto[]
+  invites: InviteDto[]
+  shareLinks: ShareLinkDto[]
+  canInvite: boolean
+  canManageLinks: boolean
+  invitableRoles: WorkspaceMemberRole[]
+  inviteEmail: string
+  inviteRole: WorkspaceMemberRole
+  inviteError: string | null
+  shareLinkError: string | null
+  newInviteToken: string | null
+  copiedToken: string | null
+  newShareTokens: Record<string, string>
+  copiedShareLinkId: string | null
+  isInvitePending: boolean
+  isRevokePending: boolean
+  isShareLinkPending: boolean
+  isShareRevokePending: boolean
+  onEmailChange: (v: string) => void
+  onRoleChange: (v: WorkspaceMemberRole) => void
+  onSubmit: (e: React.FormEvent) => void
+  onCopy: (token: string) => void
+  onRevoke: (id: string) => void
+  onDismissNewLink: () => void
+  onCreateShareLink: (accessLevel: 'view' | 'comment') => void
+  onRevokeShareLink: (linkId: string, accessLevel: string) => void
+  onCopyShareLink: (accessLevel: string, rawToken: string, linkId: string) => void
+  onDismissShareToken: (accessLevel: string) => void
+}
+
+const ACCESS_LEVEL_LABELS: Record<string, string> = {
+  view: 'View only',
+  comment: 'Can comment',
+}
+
+function PeopleTab({
+  members,
+  invites,
+  shareLinks,
+  canInvite,
+  canManageLinks,
+  invitableRoles,
+  inviteEmail,
+  inviteRole,
+  inviteError,
+  shareLinkError,
+  newInviteToken,
+  copiedToken,
+  newShareTokens,
+  copiedShareLinkId,
+  isInvitePending,
+  isRevokePending,
+  isShareLinkPending,
+  isShareRevokePending,
+  onEmailChange,
+  onRoleChange,
+  onSubmit,
+  onCopy,
+  onRevoke,
+  onDismissNewLink,
+  onCreateShareLink,
+  onRevokeShareLink,
+  onCopyShareLink,
+  onDismissShareToken,
+}: PeopleTabProps) {
+  return (
+    <div className="space-y-5">
+      {/* Members list */}
+      <div>
+        <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+          Members
+        </p>
+        <div className="space-y-1.5">
+          {members.map((m) => (
+            <div key={m.userId} className="flex items-center gap-2.5">
+              <CommentAvatar name={m.displayName} />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-xs font-semibold text-slate-200">{m.displayName}</p>
+                <p className="truncate text-[10px] text-slate-500">{m.email}</p>
+              </div>
+              <RoleBadge role={m.role} />
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Invite form — owner/editor only */}
+      {canInvite && (
+        <div className="border-t border-white/[0.06] pt-4">
+          <p className="mb-2.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+            <UserPlus className="h-3 w-3" />
+            Invite someone
+          </p>
+          <form onSubmit={onSubmit} className="space-y-2">
+            <input
+              type="email"
+              value={inviteEmail}
+              onChange={(e) => onEmailChange(e.target.value)}
+              placeholder="Email address"
+              required
+              disabled={isInvitePending}
+              className="w-full rounded border border-white/10 bg-[#09090f] px-3 py-2 text-sm text-slate-100 outline-none transition placeholder:text-slate-600 focus:border-[#7c3aed]/70"
+            />
+            <div className="flex gap-2">
+              <select
+                value={inviteRole}
+                onChange={(e) => onRoleChange(e.target.value as WorkspaceMemberRole)}
+                disabled={isInvitePending}
+                className="flex-1 rounded border border-white/10 bg-[#09090f] px-2 py-2 text-xs text-slate-200 outline-none focus:border-[#7c3aed]/70"
               >
-                Cancel
-              </button>
+                {invitableRoles.map((r) => (
+                  <option key={r} value={r}>
+                    {ROLE_LABELS[r]}
+                  </option>
+                ))}
+              </select>
               <button
-                type="button"
-                onClick={onRestoreConfirm}
-                disabled={isPending}
-                className="flex-1 rounded bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-amber-500 disabled:opacity-50"
+                type="submit"
+                disabled={isInvitePending || !inviteEmail.trim()}
+                className="rounded bg-[#7c3aed] px-3 py-2 text-xs font-semibold text-white transition hover:bg-[#8b5cf6] disabled:opacity-50"
               >
-                {isPending ? 'Restoring…' : 'Confirm restore'}
+                {isInvitePending ? 'Sending…' : 'Send invite'}
               </button>
             </div>
+            {inviteError && <p className="text-xs text-red-300">{inviteError}</p>}
+          </form>
+
+          {/* Newly created invite link */}
+          {newInviteToken && (
+            <div className="mt-3 rounded border border-emerald-500/30 bg-emerald-500/8 p-3">
+              <div className="flex items-center justify-between gap-2">
+                <p className="flex items-center gap-1.5 text-xs font-semibold text-emerald-300">
+                  <LinkIcon className="h-3 w-3" />
+                  Invite link ready
+                </p>
+                <button
+                  type="button"
+                  onClick={onDismissNewLink}
+                  className="text-slate-500 hover:text-slate-300"
+                  aria-label="Dismiss"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+              <button
+                type="button"
+                onClick={() => onCopy(newInviteToken)}
+                className="mt-2 flex w-full items-center justify-center gap-1.5 rounded border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold text-emerald-200 transition hover:bg-emerald-500/20"
+              >
+                <Copy className="h-3 w-3" />
+                {copiedToken === newInviteToken ? 'Copied!' : 'Copy link'}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Pending invites */}
+      {invites.length > 0 && (
+        <div className="border-t border-white/[0.06] pt-4">
+          <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+            Pending invites
+          </p>
+          <div className="space-y-2">
+            {invites.map((inv) => (
+              <div
+                key={inv.id}
+                className="flex items-center gap-2 rounded border border-white/10 bg-white/[0.025] px-3 py-2"
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-xs font-semibold text-slate-200">{inv.email}</p>
+                  <div className="mt-0.5 flex items-center gap-1.5">
+                    <RoleBadge role={inv.role} />
+                    <span className="text-[10px] text-slate-600">
+                      expires in {daysUntil(inv.expiresAt)}d
+                    </span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onCopy(inv.token)}
+                  title="Copy invite link"
+                  className="shrink-0 text-slate-500 transition hover:text-slate-200"
+                >
+                  {copiedToken === inv.token ? (
+                    <Check className="h-3.5 w-3.5 text-emerald-400" />
+                  ) : (
+                    <Copy className="h-3.5 w-3.5" />
+                  )}
+                </button>
+                {canInvite && (
+                  <button
+                    type="button"
+                    onClick={() => onRevoke(inv.id)}
+                    disabled={isRevokePending}
+                    title="Revoke invite"
+                    className="shrink-0 text-slate-600 transition hover:text-red-300 disabled:opacity-50"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+            ))}
           </div>
-        )}
-      </div>
+        </div>
+      )}
+
+      {/* Share links — owner/editor only */}
+      {canManageLinks && (
+        <div className="border-t border-white/[0.06] pt-4">
+          <p className="mb-2.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+            <LinkIcon className="h-3 w-3" />
+            Share links
+          </p>
+
+          {shareLinkError && <p className="mb-2 text-xs text-red-300">{shareLinkError}</p>}
+
+          <div className="space-y-2">
+            {(['view', 'comment'] as const).map((level) => {
+              const existing = shareLinks.find((l) => l.accessLevel === level)
+              const rawToken = newShareTokens[level]
+
+              return (
+                <div key={level} className="rounded border border-white/10 bg-white/[0.025] p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-semibold text-slate-200">
+                      {ACCESS_LEVEL_LABELS[level]}
+                    </span>
+                    {existing ? (
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[10px] text-emerald-400">Active</span>
+                        <button
+                          type="button"
+                          onClick={() => onRevokeShareLink(existing.id, level)}
+                          disabled={isShareRevokePending}
+                          className="text-[10px] text-slate-500 transition hover:text-red-300 disabled:opacity-50"
+                        >
+                          Revoke
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => onCreateShareLink(level)}
+                        disabled={isShareLinkPending}
+                        className="text-[10px] font-semibold text-violet-300 transition hover:text-violet-100 disabled:opacity-50"
+                      >
+                        {isShareLinkPending ? 'Creating…' : 'Create link'}
+                      </button>
+                    )}
+                  </div>
+
+                  {/* One-time raw token copy — shown only immediately after creation */}
+                  {existing && rawToken && (
+                    <div className="mt-2">
+                      <div className="mb-1.5 flex items-center justify-between gap-1">
+                        <p className="text-[10px] text-amber-300">
+                          Copy now — won&apos;t be shown again
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => onDismissShareToken(level)}
+                          className="text-slate-600 hover:text-slate-400"
+                          aria-label="Dismiss"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => onCopyShareLink(level, rawToken, existing.id)}
+                        className="flex w-full items-center justify-center gap-1.5 rounded border border-violet-500/30 bg-violet-500/10 px-3 py-1.5 text-xs font-semibold text-violet-200 transition hover:bg-violet-500/20"
+                      >
+                        <Copy className="h-3 w-3" />
+                        {copiedShareLinkId === existing.id ? 'Copied!' : 'Copy link'}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -1,7 +1,7 @@
 import { auth } from '@clerk/nextjs/server'
 import { Liveblocks } from '@liveblocks/node'
 import { getUserByClerkId } from '@/lib/db/queries/users'
-import { getProjectById } from '@/lib/db/queries/projects'
+import { getProjectByIdWithShareGrant } from '@/lib/db/queries/projects'
 
 const liveblocks = new Liveblocks({
   secret: process.env.LIVEBLOCKS_SECRET_KEY!,
@@ -38,7 +38,7 @@ export async function POST(req: Request) {
   }
 
   const projectId = room.slice('project:'.length)
-  const project = await getProjectById(projectId, user.id)
+  const project = await getProjectByIdWithShareGrant(projectId, user.id)
   if (!project) return new Response('Forbidden', { status: 403 })
 
   const session = liveblocks.prepareSession(user.id, {

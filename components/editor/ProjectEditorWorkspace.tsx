@@ -9,6 +9,8 @@ import CollaborationSidebar, { type CommentTarget } from '@/components/editor/Co
 import PresenceAvatars from '@/components/editor/PresenceAvatars'
 import type { CommentDto, CommentReplyDto } from '@/lib/actions/comments'
 import { fetchProjectComments } from '@/lib/actions/comments'
+import type { InviteDto } from '@/lib/actions/invites'
+import type { ShareLinkDto } from '@/lib/actions/share-links'
 import type { RestoredTrackMix, VersionDto } from '@/lib/actions/versions'
 import { audioEngine } from '@/lib/audio/audio-engine'
 import { RoomProvider, useEventListener } from '@/lib/realtime/liveblocks'
@@ -28,12 +30,28 @@ type Track = {
   } | null
 }
 
+export type MemberDto = {
+  userId: string
+  displayName: string
+  email: string
+  role: 'owner' | 'editor' | 'commenter' | 'viewer'
+  joinedAt: string
+}
+
 interface Props {
   projectId: string
   projectName: string
+  workspaceId: string
   tracks: Track[]
   comments: CommentDto[]
   versions: VersionDto[]
+  members: MemberDto[]
+  invites: InviteDto[]
+  shareLinks: ShareLinkDto[]
+  currentUserRole: 'owner' | 'editor' | 'commenter' | 'viewer'
+  canComment: boolean
+  canManageComments: boolean
+  isWorkspaceMember: boolean
   bpm: number | null
   timeSignature: string
 }
@@ -46,19 +64,28 @@ export default function ProjectEditorWorkspace(props: Props) {
   )
 }
 
-// Inner component: lives inside RoomProvider so it can use Liveblocks hooks.
 function ProjectEditorInner({
   projectId,
   projectName,
+  workspaceId,
   tracks: initialTracks,
   comments: initialComments,
   versions: initialVersions,
+  members,
+  invites: initialInvites,
+  shareLinks: initialShareLinks,
+  currentUserRole,
+  canComment,
+  canManageComments,
+  isWorkspaceMember,
   bpm,
   timeSignature,
 }: Props) {
   const router = useRouter()
   const [comments, setComments] = useState(initialComments)
   const [versions, setVersions] = useState(initialVersions)
+  const [invites, setInvites] = useState(initialInvites)
+  const [shareLinks, setShareLinks] = useState(initialShareLinks)
   const [tracks, setTracks] = useState(initialTracks)
   const [soloedTrackId, setSoloedTrackId] = useState<string | null>(
     () => initialTracks.find((t) => t.isSoloed)?.id ?? null
@@ -67,14 +94,10 @@ function ProjectEditorInner({
   const [target, setTarget] = useState<CommentTarget | null>(null)
   const [selectedCommentId, setSelectedCommentId] = useState<string | null>(null)
 
-  // When router.refresh() brings updated server data (e.g. after a new upload), sync tracks state.
   useEffect(() => {
     setTracks(initialTracks)
   }, [initialTracks])
 
-  // When another collaborator mutates comments, re-fetch from DB.
-  // Liveblocks does not echo events back to the sender, so only remote changes
-  // trigger this path — the local user's optimistic state is unaffected.
   useEventListener(({ event }) => {
     if (event.projectId !== projectId) return
     fetchProjectComments(projectId)
@@ -82,7 +105,6 @@ function ProjectEditorInner({
       .catch(() => {})
   })
 
-  // Escape cancels comment mode (skip if a text field is focused)
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       if (e.key !== 'Escape') return
@@ -217,11 +239,19 @@ function ProjectEditorInner({
 
         <CollaborationSidebar
           projectId={projectId}
+          workspaceId={workspaceId}
           comments={comments}
           commentMode={commentMode}
           target={target}
           selectedCommentId={selectedCommentId}
           versions={versions}
+          members={members}
+          invites={invites}
+          shareLinks={shareLinks}
+          currentUserRole={currentUserRole}
+          canComment={canComment}
+          canManageComments={canManageComments}
+          isWorkspaceMember={isWorkspaceMember}
           onStartCommentMode={() => {
             setCommentMode(true)
             setTarget(null)
@@ -235,6 +265,25 @@ function ProjectEditorInner({
           onCommentSelect={handleCommentSelect}
           onVersionCreated={handleVersionCreated}
           onRestoreComplete={handleRestoreComplete}
+          onInviteCreated={(inv) => setInvites((cur) => [inv, ...cur])}
+          onInviteRevoked={(id) => setInvites((cur) => cur.filter((i) => i.id !== id))}
+          onShareLinkCreated={(link) =>
+            setShareLinks((cur) => {
+              // Replace existing link of same access level (auto-revoked on server)
+              const filtered = cur.filter((l) => l.accessLevel !== link.accessLevel)
+              return [
+                ...filtered,
+                {
+                  id: link.id,
+                  projectId: link.projectId,
+                  accessLevel: link.accessLevel,
+                  isActive: link.isActive,
+                  createdAt: link.createdAt,
+                },
+              ]
+            })
+          }
+          onShareLinkRevoked={(id) => setShareLinks((cur) => cur.filter((l) => l.id !== id))}
         />
       </div>
     </>

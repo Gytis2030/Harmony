@@ -1,14 +1,7 @@
 import { and, asc, eq, inArray, isNull } from 'drizzle-orm'
 import { db } from '../index'
-import {
-  commentReplies,
-  comments,
-  projects,
-  tracks,
-  users,
-  workspaceMembers,
-  workspaces,
-} from '../schema'
+import { commentReplies, comments, projects, tracks, users } from '../schema'
+import { getProjectByIdWithShareGrant } from './projects'
 
 export type ProjectCommentReply = {
   id: string
@@ -42,6 +35,10 @@ export async function getCommentsForProject(
   projectId: string,
   userId: string
 ): Promise<ProjectComment[]> {
+  // Access check: workspace member OR share-grant user
+  const accessible = await getProjectByIdWithShareGrant(projectId, userId)
+  if (!accessible) return []
+
   const rows = await db
     .select({
       id: comments.id,
@@ -62,17 +59,9 @@ export async function getCommentsForProject(
     })
     .from(comments)
     .innerJoin(projects, eq(projects.id, comments.projectId))
-    .innerJoin(workspaces, eq(projects.workspaceId, workspaces.id))
-    .innerJoin(workspaceMembers, eq(workspaceMembers.workspaceId, workspaces.id))
     .innerJoin(users, eq(users.id, comments.authorUserId))
     .leftJoin(tracks, eq(tracks.id, comments.trackId))
-    .where(
-      and(
-        eq(comments.projectId, projectId),
-        eq(workspaceMembers.userId, userId),
-        isNull(projects.deletedAt)
-      )
-    )
+    .where(and(eq(comments.projectId, projectId), isNull(projects.deletedAt)))
     .orderBy(asc(comments.timestampSeconds), asc(comments.createdAt))
 
   if (rows.length === 0) return []

@@ -6,10 +6,12 @@ import { revalidatePath } from 'next/cache'
 import { db } from '@/lib/db'
 import { getUserByClerkId } from '@/lib/db/queries/users'
 import { getCommentsForProject } from '@/lib/db/queries/comments'
+import { getProjectByIdWithShareGrant } from '@/lib/db/queries/projects'
 import {
   commentReplies,
   comments,
   projects,
+  projectShareGrants,
   tracks,
   users,
   workspaceMembers,
@@ -53,8 +55,11 @@ async function requireUser() {
   return user
 }
 
-async function requireProjectMembership(projectId: string, userId: string) {
-  const [row] = await db
+// Allows workspace members (any role) OR share-grant users with 'comment' access.
+// Used for createComment and createCommentReply.
+async function requireCommentPermission(projectId: string, userId: string) {
+  // Workspace member check
+  const [memberRow] = await db
     .select({ workspaceId: projects.workspaceId })
     .from(projects)
     .innerJoin(workspaceMembers, eq(workspaceMembers.workspaceId, projects.workspaceId))
@@ -67,7 +72,26 @@ async function requireProjectMembership(projectId: string, userId: string) {
     )
     .limit(1)
 
-  if (!row) throw new Error('Forbidden')
+  if (memberRow) return
+
+  // Share-grant with comment access
+  const [grantRow] = await db
+    .select({ accessLevel: projectShareGrants.accessLevel })
+    .from(projectShareGrants)
+    .innerJoin(projects, eq(projects.id, projectShareGrants.projectId))
+    .where(
+      and(
+        eq(projectShareGrants.projectId, projectId),
+        eq(projectShareGrants.userId, userId),
+        eq(projectShareGrants.accessLevel, 'comment'),
+        isNull(projects.deletedAt)
+      )
+    )
+    .limit(1)
+
+  if (grantRow) return
+
+  throw new Error('Forbidden')
 }
 
 function toDto(row: {
@@ -134,7 +158,7 @@ export async function createComment(params: {
   body: string
 }) {
   const user = await requireUser()
-  await requireProjectMembership(params.projectId, user.id)
+  await requireCommentPermission(params.projectId, user.id)
 
   const body = params.body.trim()
   if (!body) throw new Error('Comment is required.')
@@ -392,18 +416,7 @@ export async function createCommentReply(params: { commentId: string; body: stri
 
   if (!comment) throw new Error('Comment not found')
 
-  const [membership] = await db
-    .select({ role: workspaceMembers.role })
-    .from(workspaceMembers)
-    .where(
-      and(
-        eq(workspaceMembers.workspaceId, comment.workspaceId),
-        eq(workspaceMembers.userId, user.id)
-      )
-    )
-    .limit(1)
-
-  if (!membership) throw new Error('Forbidden')
+  await requireCommentPermission(comment.projectId, user.id)
 
   const [reply] = await db
     .insert(commentReplies)
@@ -435,7 +448,9 @@ export async function createCommentReply(params: { commentId: string; body: stri
 // with this result rather than applying a partial patch.
 export async function fetchProjectComments(projectId: string): Promise<CommentDto[]> {
   const user = await requireUser()
-  await requireProjectMembership(projectId, user.id)
+  // Access check is done inside getCommentsForProject (workspace member OR share grant)
+  const accessible = await getProjectByIdWithShareGrant(projectId, user.id)
+  if (!accessible) throw new Error('Forbidden')
 
   const rawComments = await getCommentsForProject(projectId, user.id)
 

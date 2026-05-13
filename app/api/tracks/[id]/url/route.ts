@@ -1,7 +1,7 @@
 import { auth } from '@clerk/nextjs/server'
 import { and, eq } from 'drizzle-orm'
 import { db } from '@/lib/db'
-import { audioFiles, projects, tracks, workspaceMembers } from '@/lib/db/schema'
+import { audioFiles, projects, projectShareGrants, tracks, workspaceMembers } from '@/lib/db/schema'
 import { getUserByClerkId } from '@/lib/db/queries/users'
 import { createPresignedGetUrl } from '@/lib/storage/r2'
 
@@ -12,11 +12,12 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
   const user = await getUserByClerkId(clerkId)
   if (!user) return new Response('Unauthorized', { status: 401 })
 
-  // Join track → project → workspace to get r2Key and verify membership in one pass
+  // Join track → project → workspace to get r2Key
   const [row] = await db
     .select({
       r2Key: audioFiles.r2Key,
       workspaceId: projects.workspaceId,
+      projectId: projects.id,
     })
     .from(tracks)
     .innerJoin(audioFiles, eq(audioFiles.trackId, tracks.id))
@@ -26,6 +27,7 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
 
   if (!row) return new Response('Not found', { status: 404 })
 
+  // Check workspace membership first
   const [membership] = await db
     .select({ role: workspaceMembers.role })
     .from(workspaceMembers)
@@ -34,7 +36,18 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
     )
     .limit(1)
 
-  if (!membership) return new Response('Forbidden', { status: 403 })
+  if (!membership) {
+    // Fall back to share grant (view or comment both allow audio streaming)
+    const [grant] = await db
+      .select({ accessLevel: projectShareGrants.accessLevel })
+      .from(projectShareGrants)
+      .where(
+        and(eq(projectShareGrants.projectId, row.projectId), eq(projectShareGrants.userId, user.id))
+      )
+      .limit(1)
+
+    if (!grant) return new Response('Forbidden', { status: 403 })
+  }
 
   const url = await createPresignedGetUrl({ key: row.r2Key })
   return Response.json({ url })

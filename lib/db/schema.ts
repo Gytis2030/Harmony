@@ -17,8 +17,10 @@ export const planEnum = pgEnum('plan', ['free', 'pro'])
 export const workspaceMemberRoleEnum = pgEnum('workspace_member_role', [
   'owner',
   'editor',
+  'commenter',
   'viewer',
 ])
+export const inviteStatusEnum = pgEnum('invite_status', ['pending', 'accepted', 'revoked'])
 export const commentStatusEnum = pgEnum('comment_status', ['open', 'resolved'])
 
 export const users = pgTable('users', {
@@ -185,6 +187,77 @@ export const projectVersions = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [index('project_versions_project_idx').on(t.projectId)]
+)
+
+export const workspaceInvites = pgTable(
+  'workspace_invites',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspaces.id),
+    invitedBy: uuid('invited_by')
+      .notNull()
+      .references(() => users.id),
+    email: text('email').notNull(),
+    role: workspaceMemberRoleEnum('role').notNull(),
+    token: text('token').notNull().unique(),
+    status: inviteStatusEnum('status').default('pending').notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    acceptedBy: uuid('accepted_by').references(() => users.id),
+    acceptedAt: timestamp('accepted_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    index('workspace_invites_workspace_idx').on(t.workspaceId),
+    index('workspace_invites_token_idx').on(t.token),
+    index('workspace_invites_email_idx').on(t.email),
+  ]
+)
+
+export const shareLinkAccessEnum = pgEnum('share_link_access', ['view', 'comment'])
+
+export const projectShareLinks = pgTable(
+  'project_share_links',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.id),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    accessLevel: shareLinkAccessEnum('access_level').notNull(),
+    tokenHash: text('token_hash').notNull().unique(),
+    isActive: boolean('is_active').default(true).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    index('project_share_links_project_idx').on(t.projectId),
+    index('project_share_links_token_hash_idx').on(t.tokenHash),
+  ]
+)
+
+export const projectShareGrants = pgTable(
+  'project_share_grants',
+  {
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.id),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id),
+    accessLevel: shareLinkAccessEnum('access_level').notNull(),
+    shareLinkId: uuid('share_link_id')
+      .notNull()
+      .references(() => projectShareLinks.id),
+    grantedAt: timestamp('granted_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.projectId, t.userId] }),
+    index('project_share_grants_user_idx').on(t.userId),
+  ]
 )
 
 export const projectVersionTracks = pgTable(
