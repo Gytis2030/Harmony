@@ -33,6 +33,7 @@ interface Props {
   commentMode: boolean
   selectedCommentId: string | null
   soloedTrackId: string | null
+  canUploadTracks?: boolean
   onSoloChange: (trackId: string) => void
   onProjectCommentTarget: (timestampSeconds: number) => void
   onTrackCommentTarget: (trackId: string, trackName: string, timestampSeconds: number) => void
@@ -66,6 +67,7 @@ export default function ProjectTimeline({
   commentMode,
   selectedCommentId,
   soloedTrackId,
+  canUploadTracks = false,
   onSoloChange,
   onProjectCommentTarget,
   onTrackCommentTarget,
@@ -200,16 +202,18 @@ export default function ProjectTimeline({
             )
           )}
 
-          <div className="relative z-10 grid min-h-24 grid-cols-[256px_minmax(560px,1fr)] border-b border-white/10">
-            <div className="sticky left-0 z-20 flex items-center border-r border-white/10 bg-[#101018] px-4">
-              <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                Add track
-              </span>
+          {canUploadTracks && (
+            <div className="relative z-10 grid min-h-24 grid-cols-[256px_minmax(560px,1fr)] border-b border-white/10">
+              <div className="sticky left-0 z-20 flex items-center border-r border-white/10 bg-[#101018] px-4">
+                <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Add track
+                </span>
+              </div>
+              <div className="px-4 py-3">
+                <UploadWidget projectId={projectId} />
+              </div>
             </div>
-            <div className="px-4 py-3">
-              <UploadWidget projectId={projectId} />
-            </div>
-          </div>
+          )}
 
           {hasAudioTracks && (
             <div

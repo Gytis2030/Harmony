@@ -85,7 +85,7 @@ export async function POST(req: Request) {
     )
     .limit(1)
 
-  if (!membership) {
+  if (!membership || (membership.role !== 'owner' && membership.role !== 'editor')) {
     return new Response('Forbidden', { status: 403 })
   }
 

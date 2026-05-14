@@ -40,7 +40,9 @@ export async function addTrack(params: {
     )
     .limit(1)
 
-  if (!membership) throw new Error('Forbidden')
+  if (!membership || (membership.role !== 'owner' && membership.role !== 'editor')) {
+    throw new Error('Forbidden')
+  }
 
   // Determine the next track position.
   const [{ value: trackCount }] = await db
@@ -114,7 +116,9 @@ export async function updateTrackMix(params: {
     )
     .limit(1)
 
-  if (!membership) throw new Error('Forbidden')
+  if (!membership || (membership.role !== 'owner' && membership.role !== 'editor')) {
+    throw new Error('Forbidden')
+  }
 
   const values: Partial<typeof tracks.$inferInsert> = { updatedAt: new Date() }
   if (params.volume !== undefined) values.volume = Math.max(0, Math.min(1, params.volume))

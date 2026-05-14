@@ -36,7 +36,7 @@ async function requireUser() {
 
 async function requireProjectMembership(projectId: string, userId: string) {
   const [row] = await db
-    .select({ workspaceId: projects.workspaceId, name: projects.name })
+    .select({ workspaceId: projects.workspaceId, name: projects.name, role: workspaceMembers.role })
     .from(projects)
     .innerJoin(workspaceMembers, eq(workspaceMembers.workspaceId, projects.workspaceId))
     .where(
@@ -59,6 +59,7 @@ export async function createVersion(params: {
 }): Promise<VersionDto> {
   const user = await requireUser()
   const project = await requireProjectMembership(params.projectId, user.id)
+  if (project.role !== 'owner' && project.role !== 'editor') throw new Error('Forbidden')
 
   const name = params.name.trim()
   if (!name) throw new Error('Version name is required.')
@@ -130,7 +131,8 @@ export async function restoreVersion(params: {
   projectId: string
 }): Promise<RestoreResult> {
   const user = await requireUser()
-  await requireProjectMembership(params.projectId, user.id)
+  const { role } = await requireProjectMembership(params.projectId, user.id)
+  if (role !== 'owner' && role !== 'editor') throw new Error('Forbidden')
 
   const [version] = await db
     .select({ id: projectVersions.id, name: projectVersions.name })

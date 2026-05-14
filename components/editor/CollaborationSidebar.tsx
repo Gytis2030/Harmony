@@ -25,6 +25,7 @@ import {
   type CommentReplyDto,
 } from '@/lib/actions/comments'
 import { createInvite, revokeInvite, type InviteDto } from '@/lib/actions/invites'
+import { removeMember, updateMemberRole } from '@/lib/actions/members'
 import {
   createShareLink,
   revokeShareLink,
@@ -60,6 +61,7 @@ type WorkspaceMemberRole = 'owner' | 'editor' | 'commenter' | 'viewer'
 interface Props {
   projectId: string
   workspaceId: string
+  currentUserId: string
   comments: CommentDto[]
   commentMode: boolean
   target: CommentTarget | null
@@ -71,7 +73,6 @@ interface Props {
   currentUserRole: WorkspaceMemberRole
   canComment: boolean
   canManageComments: boolean
-  isWorkspaceMember: boolean
   onStartCommentMode: () => void
   onCancelComment: () => void
   onTargetChange: (target: CommentTarget) => void
@@ -84,6 +85,8 @@ interface Props {
   onRestoreComplete: (safetySnapshot: VersionDto, restoredTracks: RestoredTrackMix[]) => void
   onInviteCreated: (invite: InviteDto) => void
   onInviteRevoked: (inviteId: string) => void
+  onMemberRemoved: (userId: string) => void
+  onMemberRoleChanged: (userId: string, role: WorkspaceMemberRole) => void
   onShareLinkCreated: (link: ShareLinkCreatedDto) => void
   onShareLinkRevoked: (linkId: string) => void
 }
@@ -137,6 +140,7 @@ const FILTER_LABELS: Record<CommentFilter, string> = {
 export default function CollaborationSidebar({
   projectId,
   workspaceId,
+  currentUserId,
   comments,
   commentMode,
   target,
@@ -148,7 +152,6 @@ export default function CollaborationSidebar({
   currentUserRole,
   canComment,
   canManageComments,
-  isWorkspaceMember,
   onStartCommentMode,
   onCancelComment,
   onTargetChange,
@@ -161,9 +164,12 @@ export default function CollaborationSidebar({
   onRestoreComplete,
   onInviteCreated,
   onInviteRevoked,
+  onMemberRemoved,
+  onMemberRoleChanged,
   onShareLinkCreated,
   onShareLinkRevoked,
 }: Props) {
+  const canManageVersions = currentUserRole === 'owner' || currentUserRole === 'editor'
   const [activeTab, setActiveTab] = useState<SidebarTab>('comments')
   const [filter, setFilter] = useState<CommentFilter>('open')
   const [body, setBody] = useState('')
@@ -195,6 +201,10 @@ export default function CollaborationSidebar({
   const [copiedToken, setCopiedToken] = useState<string | null>(null)
   const [isInvitePending, startInviteTransition] = useTransition()
   const [isRevokePending, startRevokeTransition] = useTransition()
+
+  // Member management state
+  const [memberActionError, setMemberActionError] = useState<string | null>(null)
+  const [isMemberActionPending, startMemberActionTransition] = useTransition()
 
   // Share link state
   const [newShareTokens, setNewShareTokens] = useState<Record<string, string>>({}) // accessLevel → rawToken
@@ -397,6 +407,30 @@ export default function CollaborationSidebar({
     })
   }
 
+  function handleRemoveMember(userId: string) {
+    startMemberActionTransition(async () => {
+      setMemberActionError(null)
+      try {
+        await removeMember({ workspaceId, targetUserId: userId })
+        onMemberRemoved(userId)
+      } catch (err) {
+        setMemberActionError(err instanceof Error ? err.message : 'Could not remove member.')
+      }
+    })
+  }
+
+  function handleUpdateMemberRole(userId: string, role: WorkspaceMemberRole) {
+    startMemberActionTransition(async () => {
+      setMemberActionError(null)
+      try {
+        await updateMemberRole({ workspaceId, targetUserId: userId, role })
+        onMemberRoleChanged(userId, role)
+      } catch (err) {
+        setMemberActionError(err instanceof Error ? err.message : 'Could not update role.')
+      }
+    })
+  }
+
   const canInvite = currentUserRole === 'owner' || currentUserRole === 'editor'
   const canManageLinks = currentUserRole === 'owner' || currentUserRole === 'editor'
   const invitableRoles: WorkspaceMemberRole[] =
@@ -587,7 +621,7 @@ export default function CollaborationSidebar({
             ) : (
               <>
                 <span className="text-sm font-semibold text-slate-200">Versions</span>
-                {isWorkspaceMember && !versionFormOpen && (
+                {canManageVersions && !versionFormOpen && (
                   <button
                     type="button"
                     onClick={() => {
@@ -704,6 +738,7 @@ export default function CollaborationSidebar({
                   filter={filter}
                   selectedCommentId={selectedCommentId}
                   actionError={actionError}
+                  canComment={canComment}
                   onSelect={onCommentSelect}
                 />
               )}
@@ -716,6 +751,8 @@ export default function CollaborationSidebar({
               members={members}
               invites={invites}
               shareLinks={shareLinks}
+              currentUserId={currentUserId}
+              currentUserRole={currentUserRole}
               canInvite={canInvite}
               canManageLinks={canManageLinks}
               invitableRoles={invitableRoles}
@@ -723,6 +760,7 @@ export default function CollaborationSidebar({
               inviteRole={inviteRole}
               inviteError={inviteError}
               shareLinkError={shareLinkError}
+              memberActionError={memberActionError}
               newInviteToken={newInviteToken}
               copiedToken={copiedToken}
               newShareTokens={newShareTokens}
@@ -731,12 +769,15 @@ export default function CollaborationSidebar({
               isRevokePending={isRevokePending}
               isShareLinkPending={isShareLinkPending}
               isShareRevokePending={isShareRevokePending}
+              isMemberActionPending={isMemberActionPending}
               onEmailChange={setInviteEmail}
               onRoleChange={setInviteRole}
               onSubmit={handleInviteSubmit}
               onCopy={handleCopyLink}
               onRevoke={handleRevoke}
               onDismissNewLink={() => setNewInviteToken(null)}
+              onRemoveMember={handleRemoveMember}
+              onUpdateMemberRole={handleUpdateMemberRole}
               onCreateShareLink={handleCreateShareLink}
               onRevokeShareLink={handleRevokeShareLink}
               onCopyShareLink={handleCopyShareLink}
@@ -747,8 +788,8 @@ export default function CollaborationSidebar({
           {/* ── versions tab content ── */}
           {activeTab === 'versions' && (
             <>
-              {/* inline save version form — workspace members only */}
-              {isWorkspaceMember && versionFormOpen && (
+              {/* inline save version form — owner/editor only */}
+              {canManageVersions && versionFormOpen && (
                 <form
                   onSubmit={handleVersionSubmit}
                   className="rounded border border-white/10 bg-black/25 p-3"
@@ -825,7 +866,7 @@ export default function CollaborationSidebar({
                   restoreConfirm={restoreConfirm}
                   restoreError={restoreError}
                   isPending={isRestorePending}
-                  canRestore={isWorkspaceMember}
+                  canRestore={canManageVersions}
                   onRestoreClick={() => setRestoreConfirm(true)}
                   onRestoreCancel={() => {
                     setRestoreConfirm(false)
@@ -836,6 +877,7 @@ export default function CollaborationSidebar({
               ) : (
                 <VersionList
                   versions={versions}
+                  canManageVersions={canManageVersions}
                   onSelect={(id) => {
                     setSelectedVersionId(id)
                     setRestoreConfirm(false)
@@ -1044,6 +1086,7 @@ interface CommentListProps {
   filter: CommentFilter
   selectedCommentId: string | null
   actionError: string | null
+  canComment: boolean
   onSelect: (id: string) => void
 }
 
@@ -1052,13 +1095,14 @@ function CommentList({
   filter,
   selectedCommentId,
   actionError,
+  canComment,
   onSelect,
 }: CommentListProps) {
   if (comments.length === 0) {
     const emptyMessages: Record<CommentFilter, string> = {
-      open: 'No open comments yet. Click + to leave a note.',
+      open: canComment ? 'No open comments yet. Click + to leave a note.' : 'No open comments yet.',
       resolved: 'No resolved comments.',
-      all: 'No comments yet. Click + to leave the first note.',
+      all: canComment ? 'No comments yet. Click + to leave the first note.' : 'No comments yet.',
     }
     return <p className="text-sm leading-6 text-slate-500">{emptyMessages[filter]}</p>
   }
@@ -1141,14 +1185,17 @@ function CommentList({
 
 interface VersionListProps {
   versions: VersionDto[]
+  canManageVersions: boolean
   onSelect: (id: string) => void
 }
 
-function VersionList({ versions, onSelect }: VersionListProps) {
+function VersionList({ versions, canManageVersions, onSelect }: VersionListProps) {
   if (versions.length === 0) {
     return (
       <p className="text-sm leading-6 text-slate-500">
-        No versions saved yet. Click &ldquo;Save Version&rdquo; to capture the current state.
+        {canManageVersions
+          ? 'No versions saved yet. Click “Save Version” to capture the current state.'
+          : 'No versions saved yet.'}
       </p>
     )
   }
@@ -1312,6 +1359,8 @@ interface PeopleTabProps {
   members: MemberDto[]
   invites: InviteDto[]
   shareLinks: ShareLinkDto[]
+  currentUserId: string
+  currentUserRole: WorkspaceMemberRole
   canInvite: boolean
   canManageLinks: boolean
   invitableRoles: WorkspaceMemberRole[]
@@ -1319,6 +1368,7 @@ interface PeopleTabProps {
   inviteRole: WorkspaceMemberRole
   inviteError: string | null
   shareLinkError: string | null
+  memberActionError: string | null
   newInviteToken: string | null
   copiedToken: string | null
   newShareTokens: Record<string, string>
@@ -1327,12 +1377,15 @@ interface PeopleTabProps {
   isRevokePending: boolean
   isShareLinkPending: boolean
   isShareRevokePending: boolean
+  isMemberActionPending: boolean
   onEmailChange: (v: string) => void
   onRoleChange: (v: WorkspaceMemberRole) => void
   onSubmit: (e: React.FormEvent) => void
   onCopy: (token: string) => void
   onRevoke: (id: string) => void
   onDismissNewLink: () => void
+  onRemoveMember: (userId: string) => void
+  onUpdateMemberRole: (userId: string, role: WorkspaceMemberRole) => void
   onCreateShareLink: (accessLevel: 'view' | 'comment') => void
   onRevokeShareLink: (linkId: string, accessLevel: string) => void
   onCopyShareLink: (accessLevel: string, rawToken: string, linkId: string) => void
@@ -1348,6 +1401,8 @@ function PeopleTab({
   members,
   invites,
   shareLinks,
+  currentUserId,
+  currentUserRole,
   canInvite,
   canManageLinks,
   invitableRoles,
@@ -1355,6 +1410,7 @@ function PeopleTab({
   inviteRole,
   inviteError,
   shareLinkError,
+  memberActionError,
   newInviteToken,
   copiedToken,
   newShareTokens,
@@ -1363,17 +1419,23 @@ function PeopleTab({
   isRevokePending,
   isShareLinkPending,
   isShareRevokePending,
+  isMemberActionPending,
   onEmailChange,
   onRoleChange,
   onSubmit,
   onCopy,
   onRevoke,
   onDismissNewLink,
+  onRemoveMember,
+  onUpdateMemberRole,
   onCreateShareLink,
   onRevokeShareLink,
   onCopyShareLink,
   onDismissShareToken,
 }: PeopleTabProps) {
+  const canManageMembers = currentUserRole === 'owner'
+  const changeableRoles: WorkspaceMemberRole[] = ['editor', 'commenter', 'viewer']
+
   return (
     <div className="space-y-5">
       {/* Members list */}
@@ -1381,17 +1443,51 @@ function PeopleTab({
         <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
           Members
         </p>
+        {memberActionError && <p className="mb-2 text-xs text-red-300">{memberActionError}</p>}
         <div className="space-y-1.5">
-          {members.map((m) => (
-            <div key={m.userId} className="flex items-center gap-2.5">
-              <CommentAvatar name={m.displayName} />
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-xs font-semibold text-slate-200">{m.displayName}</p>
-                <p className="truncate text-[10px] text-slate-500">{m.email}</p>
+          {members.map((m) => {
+            const isCurrentUser = m.userId === currentUserId
+            const isOwner = m.role === 'owner'
+            const canEdit = canManageMembers && !isCurrentUser && !isOwner
+            return (
+              <div key={m.userId} className="flex items-center gap-2">
+                <CommentAvatar name={m.displayName} />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-xs font-semibold text-slate-200">{m.displayName}</p>
+                  <p className="truncate text-[10px] text-slate-500">{m.email}</p>
+                </div>
+                {canEdit ? (
+                  <select
+                    value={m.role}
+                    onChange={(e) =>
+                      onUpdateMemberRole(m.userId, e.target.value as WorkspaceMemberRole)
+                    }
+                    disabled={isMemberActionPending}
+                    className="rounded border border-white/10 bg-[#09090f] px-1.5 py-1 text-[10px] text-slate-200 outline-none focus:border-[#7c3aed]/70 disabled:opacity-50"
+                  >
+                    {changeableRoles.map((r) => (
+                      <option key={r} value={r}>
+                        {ROLE_LABELS[r]}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <RoleBadge role={m.role} />
+                )}
+                {canEdit && (
+                  <button
+                    type="button"
+                    onClick={() => onRemoveMember(m.userId)}
+                    disabled={isMemberActionPending}
+                    title="Remove member"
+                    className="shrink-0 text-slate-600 transition hover:text-red-300 disabled:opacity-50"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                )}
               </div>
-              <RoleBadge role={m.role} />
-            </div>
-          ))}
+            )
+          })}
         </div>
       </div>
 

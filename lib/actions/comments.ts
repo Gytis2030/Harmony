@@ -55,12 +55,12 @@ async function requireUser() {
   return user
 }
 
-// Allows workspace members (any role) OR share-grant users with 'comment' access.
-// Used for createComment and createCommentReply.
+// Allows workspace owner/editor/commenter OR share-grant users with 'comment' access.
+// Viewers (workspace role) cannot comment. Used for createComment and createCommentReply.
 async function requireCommentPermission(projectId: string, userId: string) {
-  // Workspace member check
+  // Workspace member check — exclude viewers
   const [memberRow] = await db
-    .select({ workspaceId: projects.workspaceId })
+    .select({ workspaceId: projects.workspaceId, role: workspaceMembers.role })
     .from(projects)
     .innerJoin(workspaceMembers, eq(workspaceMembers.workspaceId, projects.workspaceId))
     .where(
@@ -72,7 +72,7 @@ async function requireCommentPermission(projectId: string, userId: string) {
     )
     .limit(1)
 
-  if (memberRow) return
+  if (memberRow && memberRow.role !== 'viewer') return
 
   // Share-grant with comment access
   const [grantRow] = await db
@@ -241,7 +241,9 @@ export async function setCommentStatus(params: { commentId: string; status: 'ope
     )
     .limit(1)
 
-  if (!membership) throw new Error('Forbidden')
+  if (!membership || (membership.role !== 'owner' && membership.role !== 'editor')) {
+    throw new Error('Forbidden')
+  }
 
   const [updated] = await db
     .update(comments)
@@ -315,7 +317,9 @@ export async function setCommentPinned(params: { commentId: string; isPinned: bo
     )
     .limit(1)
 
-  if (!membership) throw new Error('Forbidden')
+  if (!membership || (membership.role !== 'owner' && membership.role !== 'editor')) {
+    throw new Error('Forbidden')
+  }
 
   const [updated] = await db
     .update(comments)
@@ -389,7 +393,9 @@ export async function deleteComment(commentId: string) {
     )
     .limit(1)
 
-  if (!membership) throw new Error('Forbidden')
+  if (!membership || (membership.role !== 'owner' && membership.role !== 'editor')) {
+    throw new Error('Forbidden')
+  }
 
   await db.delete(comments).where(eq(comments.id, commentId))
   revalidatePath(`/projects/${comment.projectId}`)

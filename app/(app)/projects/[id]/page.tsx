@@ -36,7 +36,9 @@ export default async function ProjectEditorPage({ params }: Props) {
   let currentUserRole: Role
   let canComment: boolean
   let canManageComments: boolean
+  let canUploadTracks: boolean
   let isWorkspaceMember: boolean
+  let versions: Awaited<ReturnType<typeof listVersions>> = []
   let memberDtos: {
     userId: string
     displayName: string
@@ -58,13 +60,16 @@ export default async function ProjectEditorPage({ params }: Props) {
   if (memberRecord) {
     isWorkspaceMember = true
     currentUserRole = memberRecord.role as Role
-    canComment = true
-    canManageComments = true
+    canComment = currentUserRole !== 'viewer'
+    canManageComments = currentUserRole === 'owner' || currentUserRole === 'editor'
+    canUploadTracks = currentUserRole === 'owner' || currentUserRole === 'editor'
 
-    const [invites, shareLinks] = await Promise.all([
+    const [invites, shareLinks, versionList] = await Promise.all([
       getWorkspacePendingInvites(project.workspaceId),
       getActiveShareLinksForProject(params.id),
+      listVersions(params.id),
     ])
+    versions = versionList
 
     memberDtos = allMembers.map((m) => ({
       userId: m.userId,
@@ -99,13 +104,11 @@ export default async function ProjectEditorPage({ params }: Props) {
     currentUserRole = grant.accessLevel === 'comment' ? 'commenter' : 'viewer'
     canComment = grant.accessLevel === 'comment'
     canManageComments = false
-    // memberDtos / inviteDtos / shareLinkDtos stay empty
+    canUploadTracks = false
+    // memberDtos / inviteDtos / shareLinkDtos / versions stay empty
   }
 
-  const [comments, versions] = await Promise.all([
-    getCommentsForProject(params.id, user.id),
-    listVersions(params.id),
-  ])
+  const comments = await getCommentsForProject(params.id, user.id)
 
   const commentDtos = comments.map((comment) => ({
     ...comment,
@@ -124,6 +127,7 @@ export default async function ProjectEditorPage({ params }: Props) {
         projectId={params.id}
         projectName={project.name}
         workspaceId={project.workspaceId}
+        currentUserId={user.id}
         tracks={tracks}
         comments={commentDtos}
         versions={versions}
@@ -133,6 +137,7 @@ export default async function ProjectEditorPage({ params }: Props) {
         currentUserRole={currentUserRole}
         canComment={canComment}
         canManageComments={canManageComments}
+        canUploadTracks={canUploadTracks}
         isWorkspaceMember={isWorkspaceMember}
         bpm={project.bpm}
         timeSignature={`${project.timeSignatureNumerator}/${project.timeSignatureDenominator}`}

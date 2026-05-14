@@ -42,6 +42,7 @@ interface Props {
   projectId: string
   projectName: string
   workspaceId: string
+  currentUserId: string
   tracks: Track[]
   comments: CommentDto[]
   versions: VersionDto[]
@@ -51,6 +52,7 @@ interface Props {
   currentUserRole: 'owner' | 'editor' | 'commenter' | 'viewer'
   canComment: boolean
   canManageComments: boolean
+  canUploadTracks: boolean
   isWorkspaceMember: boolean
   bpm: number | null
   timeSignature: string
@@ -68,22 +70,24 @@ function ProjectEditorInner({
   projectId,
   projectName,
   workspaceId,
+  currentUserId,
   tracks: initialTracks,
   comments: initialComments,
   versions: initialVersions,
-  members,
+  members: initialMembers,
   invites: initialInvites,
   shareLinks: initialShareLinks,
   currentUserRole,
   canComment,
   canManageComments,
-  isWorkspaceMember,
+  canUploadTracks,
   bpm,
   timeSignature,
 }: Props) {
   const router = useRouter()
   const [comments, setComments] = useState(initialComments)
   const [versions, setVersions] = useState(initialVersions)
+  const [members, setMembers] = useState(initialMembers)
   const [invites, setInvites] = useState(initialInvites)
   const [shareLinks, setShareLinks] = useState(initialShareLinks)
   const [tracks, setTracks] = useState(initialTracks)
@@ -225,6 +229,7 @@ function ProjectEditorInner({
           commentMode={commentMode}
           selectedCommentId={selectedCommentId}
           soloedTrackId={soloedTrackId}
+          canUploadTracks={canUploadTracks}
           onSoloChange={(trackId) =>
             setSoloedTrackId((current) => (current === trackId ? null : trackId))
           }
@@ -240,6 +245,7 @@ function ProjectEditorInner({
         <CollaborationSidebar
           projectId={projectId}
           workspaceId={workspaceId}
+          currentUserId={currentUserId}
           comments={comments}
           commentMode={commentMode}
           target={target}
@@ -251,7 +257,6 @@ function ProjectEditorInner({
           currentUserRole={currentUserRole}
           canComment={canComment}
           canManageComments={canManageComments}
-          isWorkspaceMember={isWorkspaceMember}
           onStartCommentMode={() => {
             setCommentMode(true)
             setTarget(null)
@@ -267,6 +272,10 @@ function ProjectEditorInner({
           onRestoreComplete={handleRestoreComplete}
           onInviteCreated={(inv) => setInvites((cur) => [inv, ...cur])}
           onInviteRevoked={(id) => setInvites((cur) => cur.filter((i) => i.id !== id))}
+          onMemberRemoved={(userId) => setMembers((cur) => cur.filter((m) => m.userId !== userId))}
+          onMemberRoleChanged={(userId, role) =>
+            setMembers((cur) => cur.map((m) => (m.userId === userId ? { ...m, role } : m)))
+          }
           onShareLinkCreated={(link) =>
             setShareLinks((cur) => {
               // Replace existing link of same access level (auto-revoked on server)
