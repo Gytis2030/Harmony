@@ -54,7 +54,19 @@ export type CommentTarget = {
   timestampSeconds: number
 }
 
-type SidebarTab = 'comments' | 'versions' | 'people'
+export type ActivityDto = {
+  id: string
+  projectId: string
+  actorUserId: string | null
+  actorName: string | null
+  type: string
+  targetType: string | null
+  targetId: string | null
+  metadata: Record<string, unknown> | null
+  createdAt: string
+}
+
+type SidebarTab = 'comments' | 'versions' | 'people' | 'activity'
 
 type WorkspaceMemberRole = 'owner' | 'editor' | 'commenter' | 'viewer'
 
@@ -70,6 +82,7 @@ interface Props {
   members: MemberDto[]
   invites: InviteDto[]
   shareLinks: ShareLinkDto[]
+  activity: ActivityDto[]
   currentUserRole: WorkspaceMemberRole
   canComment: boolean
   canManageComments: boolean
@@ -149,6 +162,7 @@ export default function CollaborationSidebar({
   members,
   invites,
   shareLinks,
+  activity,
   currentUserRole,
   canComment,
   canManageComments,
@@ -525,6 +539,18 @@ export default function CollaborationSidebar({
           >
             People {members.length > 0 ? `(${members.length})` : ''}
           </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('activity')}
+            className={[
+              'flex-1 py-2.5 text-xs font-semibold transition',
+              activeTab === 'activity'
+                ? 'border-b-2 border-violet-500 text-white'
+                : 'text-slate-500 hover:text-slate-300',
+            ].join(' ')}
+          >
+            Activity
+          </button>
         </div>
 
         {/* comments tab sub-header */}
@@ -743,6 +769,24 @@ export default function CollaborationSidebar({
                 />
               )}
             </>
+          )}
+
+          {/* ── activity tab content ── */}
+          {activeTab === 'activity' && (
+            <ActivityFeed
+              activity={activity}
+              onSelectComment={(commentId) => {
+                setActiveTab('comments')
+                onCommentSelect(commentId)
+              }}
+              onSelectVersion={(versionId) => {
+                setActiveTab('versions')
+                setSelectedVersionId(versionId)
+                setRestoreConfirm(false)
+                setRestoreError(null)
+                setVersionFormOpen(false)
+              }}
+            />
           )}
 
           {/* ── people tab content ── */}
@@ -1316,6 +1360,115 @@ function VersionDetail({
           )}
         </div>
       )}
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────
+// Activity feed
+
+function formatActivityText(event: ActivityDto): string {
+  const actor = event.actorName ?? 'Someone'
+  const meta = event.metadata ?? {}
+
+  switch (event.type) {
+    case 'track.uploaded':
+      return `${actor} uploaded ${String(meta.filename ?? meta.trackName ?? 'a track')}`
+    case 'comment.created': {
+      const ts = typeof meta.timestampSeconds === 'number' ? meta.timestampSeconds : null
+      const timeStr = ts !== null ? ` at ${formatTime(ts)}` : ''
+      return `${actor} commented${timeStr}`
+    }
+    case 'comment.replied':
+      return `${actor} replied to a comment`
+    case 'comment.resolved':
+      return `${actor} resolved a comment`
+    case 'comment.reopened':
+      return `${actor} reopened a comment`
+    case 'version.created':
+      return `${actor} saved version "${String(meta.versionName ?? 'Untitled')}"`
+    case 'version.restored':
+      return `${actor} restored version "${String(meta.versionName ?? 'Untitled')}"`
+    case 'share_link.created': {
+      const level = meta.accessLevel === 'comment' ? 'comment' : 'view'
+      return `${actor} created a ${level} share link`
+    }
+    case 'share_link.accessed': {
+      const level = meta.accessLevel === 'comment' ? 'commenter' : 'reviewer'
+      return `A ${level} joined via share link`
+    }
+    default:
+      return `${actor} did something`
+  }
+}
+
+function activityIsClickable(event: ActivityDto): boolean {
+  return (
+    (event.type === 'comment.created' ||
+      event.type === 'comment.replied' ||
+      event.type === 'comment.resolved' ||
+      event.type === 'comment.reopened') &&
+    event.targetId !== null
+  )
+}
+
+function activityIsVersion(event: ActivityDto): boolean {
+  return (
+    (event.type === 'version.created' || event.type === 'version.restored') &&
+    event.targetId !== null
+  )
+}
+
+interface ActivityFeedProps {
+  activity: ActivityDto[]
+  onSelectComment: (commentId: string) => void
+  onSelectVersion: (versionId: string) => void
+}
+
+function ActivityFeed({ activity, onSelectComment, onSelectVersion }: ActivityFeedProps) {
+  if (activity.length === 0) {
+    return (
+      <p className="text-sm leading-6 text-slate-500">
+        No activity yet. Actions like uploading tracks, leaving comments, and saving versions will
+        appear here.
+      </p>
+    )
+  }
+
+  return (
+    <div className="space-y-1">
+      {activity.map((event) => {
+        const clickable = activityIsClickable(event)
+        const isVersion = activityIsVersion(event)
+        const text = formatActivityText(event)
+
+        function handleClick() {
+          if (clickable && event.targetId) {
+            onSelectComment(event.targetId)
+          } else if (isVersion && event.targetId) {
+            onSelectVersion(event.targetId)
+          }
+        }
+
+        const interactive = clickable || isVersion
+
+        return (
+          <div
+            key={event.id}
+            onClick={interactive ? handleClick : undefined}
+            className={[
+              'flex items-start gap-2.5 rounded px-2 py-2 transition',
+              interactive ? 'cursor-pointer hover:bg-white/[0.04]' : 'cursor-default',
+            ].join(' ')}
+          >
+            <CommentAvatar name={event.actorName ?? '?'} size="sm" />
+            <div className="min-w-0 flex-1">
+              <p className="text-xs leading-5 text-slate-300">{text}</p>
+              <p className="text-[10px] text-slate-600">{formatRelativeTime(event.createdAt)}</p>
+            </div>
+          </div>
+        )
+      })}
     </div>
   )
 }

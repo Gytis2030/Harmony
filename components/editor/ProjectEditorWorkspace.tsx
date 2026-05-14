@@ -5,7 +5,10 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, Circle } from 'lucide-react'
 import ProjectTimeline from '@/components/editor/ProjectTimeline'
-import CollaborationSidebar, { type CommentTarget } from '@/components/editor/CollaborationSidebar'
+import CollaborationSidebar, {
+  type CommentTarget,
+  type ActivityDto,
+} from '@/components/editor/CollaborationSidebar'
 import PresenceAvatars from '@/components/editor/PresenceAvatars'
 import type { CommentDto, CommentReplyDto } from '@/lib/actions/comments'
 import { fetchProjectComments } from '@/lib/actions/comments'
@@ -49,6 +52,7 @@ interface Props {
   members: MemberDto[]
   invites: InviteDto[]
   shareLinks: ShareLinkDto[]
+  activity: ActivityDto[]
   currentUserRole: 'owner' | 'editor' | 'commenter' | 'viewer'
   canComment: boolean
   canManageComments: boolean
@@ -77,6 +81,7 @@ function ProjectEditorInner({
   members: initialMembers,
   invites: initialInvites,
   shareLinks: initialShareLinks,
+  activity: initialActivity,
   currentUserRole,
   canComment,
   canManageComments,
@@ -90,6 +95,7 @@ function ProjectEditorInner({
   const [members, setMembers] = useState(initialMembers)
   const [invites, setInvites] = useState(initialInvites)
   const [shareLinks, setShareLinks] = useState(initialShareLinks)
+  const [activity] = useState(initialActivity)
   const [tracks, setTracks] = useState(initialTracks)
   const [soloedTrackId, setSoloedTrackId] = useState<string | null>(
     () => initialTracks.find((t) => t.isSoloed)?.id ?? null
@@ -254,6 +260,7 @@ function ProjectEditorInner({
           members={members}
           invites={invites}
           shareLinks={shareLinks}
+          activity={activity}
           currentUserRole={currentUserRole}
           canComment={canComment}
           canManageComments={canManageComments}

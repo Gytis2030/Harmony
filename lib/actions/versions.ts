@@ -6,6 +6,7 @@ import { revalidatePath } from 'next/cache'
 import { db } from '@/lib/db'
 import { getUserByClerkId } from '@/lib/db/queries/users'
 import { getTracksForProject } from '@/lib/db/queries/tracks'
+import { recordActivity } from '@/lib/db/queries/activity'
 import {
   projects,
   projectVersions,
@@ -52,15 +53,12 @@ async function requireProjectMembership(projectId: string, userId: string) {
   return row
 }
 
-export async function createVersion(params: {
-  projectId: string
-  name: string
-  description?: string
-}): Promise<VersionDto> {
-  const user = await requireUser()
-  const project = await requireProjectMembership(params.projectId, user.id)
-  if (project.role !== 'owner' && project.role !== 'editor') throw new Error('Forbidden')
-
+async function createVersionInternal(
+  params: { projectId: string; name: string; description?: string },
+  user: { id: string; displayName: string | null; email: string },
+  project: { name: string; role: string },
+  skipActivity = false
+): Promise<VersionDto> {
   const name = params.name.trim()
   if (!name) throw new Error('Version name is required.')
   if (name.length > 200) throw new Error('Version name must be 200 characters or fewer.')
@@ -101,6 +99,17 @@ export async function createVersion(params: {
     return v
   })
 
+  if (!skipActivity) {
+    await recordActivity({
+      projectId: params.projectId,
+      actorUserId: user.id,
+      type: 'version.created',
+      targetType: 'version',
+      targetId: version.id,
+      metadata: { versionName: name },
+    })
+  }
+
   return {
     id: version.id,
     projectId: params.projectId,
@@ -111,6 +120,18 @@ export async function createVersion(params: {
     creatorName: user.displayName ?? user.email,
     createdAt: version.createdAt.toISOString(),
   }
+}
+
+export async function createVersion(params: {
+  projectId: string
+  name: string
+  description?: string
+}): Promise<VersionDto> {
+  const user = await requireUser()
+  const project = await requireProjectMembership(params.projectId, user.id)
+  if (project.role !== 'owner' && project.role !== 'editor') throw new Error('Forbidden')
+
+  return createVersionInternal(params, user, project)
 }
 
 export type RestoredTrackMix = {
@@ -131,8 +152,8 @@ export async function restoreVersion(params: {
   projectId: string
 }): Promise<RestoreResult> {
   const user = await requireUser()
-  const { role } = await requireProjectMembership(params.projectId, user.id)
-  if (role !== 'owner' && role !== 'editor') throw new Error('Forbidden')
+  const project = await requireProjectMembership(params.projectId, user.id)
+  if (project.role !== 'owner' && project.role !== 'editor') throw new Error('Forbidden')
 
   const [version] = await db
     .select({ id: projectVersions.id, name: projectVersions.name })
@@ -149,11 +170,13 @@ export async function restoreVersion(params: {
     .from(projectVersionTracks)
     .where(eq(projectVersionTracks.versionId, params.versionId))
 
-  // Snapshot current state BEFORE overwriting it.
-  const safetySnapshot = await createVersion({
-    projectId: params.projectId,
-    name: `Before restoring: ${version.name}`,
-  })
+  // Snapshot current state BEFORE overwriting it (skip activity — the restore event covers it).
+  const safetySnapshot = await createVersionInternal(
+    { projectId: params.projectId, name: `Before restoring: ${version.name}` },
+    user,
+    project,
+    true
+  )
 
   let restoredCount = 0
   const restoredTracks: RestoredTrackMix[] = []
@@ -187,6 +210,15 @@ export async function restoreVersion(params: {
       }
     })
   }
+
+  await recordActivity({
+    projectId: params.projectId,
+    actorUserId: user.id,
+    type: 'version.restored',
+    targetType: 'version',
+    targetId: params.versionId,
+    metadata: { versionName: version.name },
+  })
 
   revalidatePath(`/projects/${params.projectId}`)
 

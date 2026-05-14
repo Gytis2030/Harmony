@@ -280,3 +280,23 @@ export const projectVersionTracks = pgTable(
   },
   (t) => [index('project_version_tracks_version_idx').on(t.versionId)]
 )
+
+export const projectActivity = pgTable(
+  'project_activity',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.id),
+    actorUserId: uuid('actor_user_id').references(() => users.id),
+    type: text('type').notNull(),
+    targetType: text('target_type'),
+    targetId: text('target_id'),
+    metadata: jsonb('metadata'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    index('project_activity_project_idx').on(t.projectId),
+    index('project_activity_project_time_idx').on(t.projectId, t.createdAt),
+  ]
+)

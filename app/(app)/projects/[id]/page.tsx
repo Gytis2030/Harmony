@@ -9,8 +9,10 @@ import {
 import { getTracksForProject } from '@/lib/db/queries/tracks'
 import { getCommentsForProject } from '@/lib/db/queries/comments'
 import { getWorkspaceMembers, getWorkspacePendingInvites } from '@/lib/db/queries/workspaces'
+import { getRecentActivity } from '@/lib/db/queries/activity'
 import { listVersions } from '@/lib/actions/versions'
 import type { ShareLinkDto } from '@/lib/actions/share-links'
+import type { ActivityDto } from '@/components/editor/CollaborationSidebar'
 import ProjectEditorWorkspace from '@/components/editor/ProjectEditorWorkspace'
 
 interface Props {
@@ -39,6 +41,7 @@ export default async function ProjectEditorPage({ params }: Props) {
   let canUploadTracks: boolean
   let isWorkspaceMember: boolean
   let versions: Awaited<ReturnType<typeof listVersions>> = []
+  let activityDtos: ActivityDto[] = []
   let memberDtos: {
     userId: string
     displayName: string
@@ -64,12 +67,24 @@ export default async function ProjectEditorPage({ params }: Props) {
     canManageComments = currentUserRole === 'owner' || currentUserRole === 'editor'
     canUploadTracks = currentUserRole === 'owner' || currentUserRole === 'editor'
 
-    const [invites, shareLinks, versionList] = await Promise.all([
+    const [invites, shareLinks, versionList, activityRows] = await Promise.all([
       getWorkspacePendingInvites(project.workspaceId),
       getActiveShareLinksForProject(params.id),
       listVersions(params.id),
+      getRecentActivity(params.id).catch(() => []),
     ])
     versions = versionList
+    activityDtos = activityRows.map((r) => ({
+      id: r.id,
+      projectId: r.projectId,
+      actorUserId: r.actorUserId,
+      actorName: r.actorName ?? r.actorEmail ?? null,
+      type: r.type,
+      targetType: r.targetType,
+      targetId: r.targetId,
+      metadata: r.metadata as Record<string, unknown> | null,
+      createdAt: r.createdAt.toISOString(),
+    }))
 
     memberDtos = allMembers.map((m) => ({
       userId: m.userId,
@@ -105,7 +120,30 @@ export default async function ProjectEditorPage({ params }: Props) {
     canComment = grant.accessLevel === 'comment'
     canManageComments = false
     canUploadTracks = false
-    // memberDtos / inviteDtos / shareLinkDtos / versions stay empty
+
+    const SHARE_GRANT_ACTIVITY_TYPES = new Set([
+      'track.uploaded',
+      'comment.created',
+      'comment.replied',
+      'comment.resolved',
+      'comment.reopened',
+      'version.created',
+      'version.restored',
+    ])
+    const activityRows = await getRecentActivity(params.id).catch(() => [])
+    activityDtos = activityRows
+      .filter((r) => SHARE_GRANT_ACTIVITY_TYPES.has(r.type))
+      .map((r) => ({
+        id: r.id,
+        projectId: r.projectId,
+        actorUserId: r.actorUserId,
+        actorName: r.actorName ?? r.actorEmail ?? null,
+        type: r.type,
+        targetType: r.targetType,
+        targetId: r.targetId,
+        metadata: r.metadata as Record<string, unknown> | null,
+        createdAt: r.createdAt.toISOString(),
+      }))
   }
 
   const comments = await getCommentsForProject(params.id, user.id)
@@ -134,6 +172,7 @@ export default async function ProjectEditorPage({ params }: Props) {
         members={memberDtos}
         invites={inviteDtos}
         shareLinks={shareLinkDtos}
+        activity={activityDtos}
         currentUserRole={currentUserRole}
         canComment={canComment}
         canManageComments={canManageComments}

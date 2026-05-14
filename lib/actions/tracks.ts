@@ -6,6 +6,7 @@ import { revalidatePath } from 'next/cache'
 import { db } from '@/lib/db'
 import { getUserByClerkId } from '@/lib/db/queries/users'
 import { audioFiles, projects, tracks, workspaceMembers } from '@/lib/db/schema'
+import { recordActivity } from '@/lib/db/queries/activity'
 
 export async function addTrack(params: {
   r2Key: string
@@ -71,6 +72,13 @@ export async function addTrack(params: {
       mimeType: params.mimeType,
       sizeBytes: params.sizeBytes,
     })
+  })
+
+  await recordActivity({
+    projectId: params.projectId,
+    actorUserId: user.id,
+    type: 'track.uploaded',
+    metadata: { trackName, filename: params.filename },
   })
 
   revalidatePath(`/projects/${params.projectId}`)

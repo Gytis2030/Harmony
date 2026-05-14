@@ -16,6 +16,7 @@ import {
   users,
   workspaceMembers,
 } from '@/lib/db/schema'
+import { recordActivity } from '@/lib/db/queries/activity'
 
 export type CommentReplyDto = {
   id: string
@@ -205,6 +206,18 @@ export async function createComment(params: {
       updatedAt: comments.updatedAt,
     })
 
+  await recordActivity({
+    projectId: params.projectId,
+    actorUserId: user.id,
+    type: 'comment.created',
+    targetType: 'comment',
+    targetId: comment.id,
+    metadata: {
+      timestampSeconds: params.timestampSeconds,
+      trackName: trackName ?? null,
+    },
+  })
+
   revalidatePath(`/projects/${params.projectId}`)
 
   return toDto({
@@ -280,6 +293,14 @@ export async function setCommentStatus(params: { commentId: string; status: 'ope
       .limit(1)
     trackName = track?.name ?? null
   }
+
+  await recordActivity({
+    projectId: comment.projectId,
+    actorUserId: user.id,
+    type: params.status === 'resolved' ? 'comment.resolved' : 'comment.reopened',
+    targetType: 'comment',
+    targetId: params.commentId,
+  })
 
   revalidatePath(`/projects/${comment.projectId}`)
 
@@ -439,6 +460,14 @@ export async function createCommentReply(params: { commentId: string; body: stri
       createdAt: commentReplies.createdAt,
       updatedAt: commentReplies.updatedAt,
     })
+
+  await recordActivity({
+    projectId: comment.projectId,
+    actorUserId: user.id,
+    type: 'comment.replied',
+    targetType: 'comment',
+    targetId: params.commentId,
+  })
 
   revalidatePath(`/projects/${comment.projectId}`)
 

@@ -7,6 +7,7 @@ import { redirect } from 'next/navigation'
 import { db } from '@/lib/db'
 import { getUserByClerkId } from '@/lib/db/queries/users'
 import { getActiveShareLinksForProject, getShareLinkByTokenHash } from '@/lib/db/queries/projects'
+import { recordActivity } from '@/lib/db/queries/activity'
 import { projects, projectShareGrants, projectShareLinks, workspaceMembers } from '@/lib/db/schema'
 
 export type ShareLinkDto = {
@@ -90,6 +91,15 @@ export async function createShareLink(params: {
       createdAt: projectShareLinks.createdAt,
     })
 
+  await recordActivity({
+    projectId: params.projectId,
+    actorUserId: user.id,
+    type: 'share_link.created',
+    targetType: 'share_link',
+    targetId: link.id,
+    metadata: { accessLevel: params.accessLevel },
+  })
+
   return {
     id: link.id,
     projectId: link.projectId,
@@ -142,6 +152,14 @@ export async function activateShareLink(token: string): Promise<void> {
   if (!link) throw new Error('This share link is invalid.')
   if (!link.isActive) throw new Error('This share link has been revoked.')
 
+  const [existingGrant] = await db
+    .select({ grantedAt: projectShareGrants.grantedAt })
+    .from(projectShareGrants)
+    .where(
+      and(eq(projectShareGrants.projectId, link.projectId), eq(projectShareGrants.userId, user.id))
+    )
+    .limit(1)
+
   await db
     .insert(projectShareGrants)
     .values({
@@ -158,6 +176,16 @@ export async function activateShareLink(token: string): Promise<void> {
         grantedAt: new Date(),
       },
     })
+
+  // Only record on first access, not on every re-visit via share link.
+  if (!existingGrant) {
+    await recordActivity({
+      projectId: link.projectId,
+      actorUserId: user.id,
+      type: 'share_link.accessed',
+      metadata: { accessLevel: link.accessLevel },
+    })
+  }
 
   redirect(`/projects/${link.projectId}`)
 }
