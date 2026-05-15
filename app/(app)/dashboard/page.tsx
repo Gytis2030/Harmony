@@ -1,7 +1,7 @@
-import { auth } from '@clerk/nextjs/server'
+import { auth, currentUser } from '@clerk/nextjs/server'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
-import { getUserByClerkId } from '@/lib/db/queries/users'
+import { getUserByClerkId, provisionUser } from '@/lib/db/queries/users'
 import { getProjectsForUser } from '@/lib/db/queries/projects'
 import { CreateProjectDialog } from '@/components/editor/CreateProjectDialog'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -10,7 +10,23 @@ export default async function DashboardPage() {
   const { userId: clerkId } = auth()
   if (!clerkId) redirect('/sign-in')
 
-  const user = await getUserByClerkId(clerkId)
+  let user = await getUserByClerkId(clerkId)
+  if (!user) {
+    const clerkUser = await currentUser()
+    if (!clerkUser) redirect('/sign-in')
+    const email =
+      clerkUser.emailAddresses.find((e) => e.id === clerkUser.primaryEmailAddressId)
+        ?.emailAddress ??
+      clerkUser.emailAddresses[0]?.emailAddress ??
+      ''
+    const displayName = [clerkUser.firstName, clerkUser.lastName].filter(Boolean).join(' ') || null
+    user = await provisionUser({
+      clerkId,
+      email,
+      displayName,
+      avatarUrl: clerkUser.imageUrl ?? null,
+    })
+  }
   if (!user) redirect('/sign-in')
 
   const projects = await getProjectsForUser(user.id)

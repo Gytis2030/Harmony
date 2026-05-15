@@ -8,6 +8,10 @@ vi.mock('@/lib/db/queries/users', () => ({
   getUserByClerkId: vi.fn(),
 }))
 
+vi.mock('@/lib/db/queries/activity', () => ({
+  recordActivity: vi.fn().mockResolvedValue(undefined),
+}))
+
 vi.mock('next/cache', () => ({
   revalidatePath: vi.fn(),
 }))

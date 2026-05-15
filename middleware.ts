@@ -1,14 +1,16 @@
 import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server'
 
-const isProtectedRoute = createRouteMatcher([
-  '/dashboard(.*)',
-  '/projects(.*)',
-  '/invite(.*)',
-  '/share(.*)',
+// Explicitly declare public routes so Clerk can identify its own auth pages
+// and so webhooks (which use their own svix signature, not Clerk sessions) are reachable.
+const isPublicRoute = createRouteMatcher([
+  '/',
+  '/sign-in(.*)',
+  '/sign-up(.*)',
+  '/api/webhooks/(.*)',
 ])
 
 export default clerkMiddleware((auth, req) => {
-  if (isProtectedRoute(req)) {
+  if (!isPublicRoute(req)) {
     auth().protect()
   }
 })
