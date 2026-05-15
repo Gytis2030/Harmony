@@ -1,7 +1,8 @@
-import { and, eq, isNull } from 'drizzle-orm'
+import { and, count, eq, isNull } from 'drizzle-orm'
 import { db } from '../index'
 import {
   projects,
+  tracks,
   workspaces,
   workspaceMembers,
   projectShareGrants,
@@ -109,7 +110,7 @@ export async function getShareLinkByTokenHash(tokenHash: string) {
 }
 
 export async function getProjectsForUser(userId: string) {
-  return db
+  const rows = await db
     .select({
       id: projects.id,
       name: projects.name,
@@ -122,4 +123,23 @@ export async function getProjectsForUser(userId: string) {
     .innerJoin(workspaces, eq(projects.workspaceId, workspaces.id))
     .innerJoin(workspaceMembers, eq(workspaceMembers.workspaceId, workspaces.id))
     .where(and(eq(workspaceMembers.userId, userId), isNull(projects.deletedAt)))
+
+  if (rows.length === 0) return []
+
+  const projectIds = rows.map((r) => r.id)
+
+  const stemCounts = await db
+    .select({ projectId: tracks.projectId, stemCount: count(tracks.id) })
+    .from(tracks)
+    .innerJoin(projects, eq(projects.id, tracks.projectId))
+    .where(isNull(projects.deletedAt))
+    .groupBy(tracks.projectId)
+
+  const countMap = new Map(
+    stemCounts
+      .filter((c) => projectIds.includes(c.projectId))
+      .map((c) => [c.projectId, c.stemCount])
+  )
+
+  return rows.map((row) => ({ ...row, stemCount: countMap.get(row.id) ?? 0 }))
 }

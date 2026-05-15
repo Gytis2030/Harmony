@@ -44,6 +44,32 @@ export type ActivityRow = {
   createdAt: Date
 }
 
+export type ActivityDto = {
+  id: string
+  projectId: string
+  actorUserId: string | null
+  actorName: string | null
+  type: string
+  targetType: string | null
+  targetId: string | null
+  metadata: Record<string, unknown> | null
+  createdAt: string
+}
+
+export function toActivityDto(r: ActivityRow): ActivityDto {
+  return {
+    id: r.id,
+    projectId: r.projectId,
+    actorUserId: r.actorUserId,
+    actorName: r.actorName ?? r.actorEmail ?? null,
+    type: r.type,
+    targetType: r.targetType,
+    targetId: r.targetId,
+    metadata: r.metadata as Record<string, unknown> | null,
+    createdAt: r.createdAt.toISOString(),
+  }
+}
+
 export async function getRecentActivity(projectId: string, limit = 50): Promise<ActivityRow[]> {
   return db
     .select({

@@ -42,11 +42,11 @@ export function CreateProjectDialog({ label = 'New Project' }: Props) {
       </Button>
 
       {open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="w-full max-w-sm rounded-lg bg-white p-6 shadow-lg">
-            <h2 className="mb-4 text-lg font-semibold">New Project</h2>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="w-full max-w-sm rounded-xl border border-white/10 bg-[#0c0c12] p-6 shadow-2xl">
+            <h2 className="mb-4 text-lg font-semibold text-white">New Project</h2>
             <form onSubmit={handleSubmit}>
-              <label className="mb-1 block text-sm font-medium text-gray-700" htmlFor="name">
+              <label className="mb-1 block text-sm font-medium text-slate-300" htmlFor="name">
                 Project name
               </label>
               <input
@@ -56,24 +56,27 @@ export function CreateProjectDialog({ label = 'New Project' }: Props) {
                 type="text"
                 required
                 placeholder="Untitled project"
-                className="mb-4 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black"
+                className="mb-4 w-full rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-violet-500/50 focus:outline-none focus:ring-1 focus:ring-violet-500/50"
               />
 
-              {error && <p className="mb-3 text-sm text-red-600">{error}</p>}
+              {error && <p className="mb-3 text-sm text-red-400">{error}</p>}
 
               <div className="flex justify-end gap-2">
-                <Button
+                <button
                   type="button"
-                  variant="ghost"
-                  size="sm"
                   onClick={() => setOpen(false)}
                   disabled={isPending}
+                  className="rounded-md px-3 py-1.5 text-sm font-medium text-slate-400 transition hover:bg-white/5 hover:text-white disabled:opacity-50"
                 >
                   Cancel
-                </Button>
-                <Button type="submit" size="sm" disabled={isPending}>
+                </button>
+                <button
+                  type="submit"
+                  disabled={isPending}
+                  className="rounded-md bg-violet-600 px-4 py-1.5 text-sm font-semibold text-white transition hover:bg-violet-500 disabled:opacity-50"
+                >
                   {isPending ? 'Creating…' : 'Create'}
-                </Button>
+                </button>
               </div>
             </form>
           </div>

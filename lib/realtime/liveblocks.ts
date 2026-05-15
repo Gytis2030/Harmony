@@ -24,6 +24,11 @@ export type CommentRealtimeEvent =
   | { type: 'comment.replied'; projectId: string; commentId: string; replyId: string }
   | { type: 'comment.resolved'; projectId: string; commentId: string }
   | { type: 'comment.reopened'; projectId: string; commentId: string }
+  | { type: 'comment.deleted'; projectId: string; commentId: string }
+  | { type: 'comment.pinned'; projectId: string; commentId: string }
+  | { type: 'version.created'; projectId: string; versionId: string }
+  | { type: 'version.restored'; projectId: string; versionId: string }
+  | { type: 'activity.created'; projectId: string }
 
 export const { RoomProvider, useOthers, useSelf, useStatus, useBroadcastEvent, useEventListener } =
   createRoomContext<Presence, Storage, UserMeta, CommentRealtimeEvent>(client)

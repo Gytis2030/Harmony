@@ -201,6 +201,11 @@ export const workspaceInvites = pgTable(
       .references(() => users.id),
     email: text('email').notNull(),
     role: workspaceMemberRoleEnum('role').notNull(),
+    // When set, this invite is scoped to one project. Viewer/commenter invites
+    // created from the project editor store the project here so that accepting
+    // grants a projectShareGrant (project-level) rather than workspaceMember
+    // (workspace-level, which would expose all workspace projects).
+    projectId: uuid('project_id').references(() => projects.id),
     token: text('token').notNull().unique(),
     status: inviteStatusEnum('status').default('pending').notNull(),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
@@ -249,9 +254,7 @@ export const projectShareGrants = pgTable(
       .notNull()
       .references(() => users.id),
     accessLevel: shareLinkAccessEnum('access_level').notNull(),
-    shareLinkId: uuid('share_link_id')
-      .notNull()
-      .references(() => projectShareLinks.id),
+    shareLinkId: uuid('share_link_id').references(() => projectShareLinks.id),
     grantedAt: timestamp('granted_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [

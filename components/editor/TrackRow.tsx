@@ -22,6 +22,7 @@ interface Props {
   comments: CommentDto[]
   commentMode: boolean
   selectedCommentId: string | null
+  canEditMix?: boolean
   onTrackLoaded: (trackId: string, duration: number) => void
   onSoloChange: (trackId: string) => void
   onCommentTarget: (trackId: string, trackName: string, timestampSeconds: number) => void
@@ -87,6 +88,7 @@ export default function TrackRow({
   comments,
   commentMode,
   selectedCommentId,
+  canEditMix = false,
   onTrackLoaded,
   onSoloChange,
   onCommentTarget,
@@ -163,13 +165,14 @@ export default function TrackRow({
       didMountVolumeRef.current = true
       return
     }
+    if (!canEditMix) return
 
     const timeout = window.setTimeout(() => {
       void updateTrackMix({ trackId, volume: state.volume })
     }, 300)
 
     return () => window.clearTimeout(timeout)
-  }, [trackId, state.volume])
+  }, [trackId, state.volume, canEditMix])
 
   function handleVolumeChange(e: React.ChangeEvent<HTMLInputElement>) {
     const value = parseFloat(e.target.value)
@@ -181,14 +184,14 @@ export default function TrackRow({
     const next = !state.muted
     dispatch({ type: 'toggle_mute' })
     audioEngine.setMuted(trackId, next)
-    void updateTrackMix({ trackId, isMuted: next })
+    if (canEditMix) void updateTrackMix({ trackId, isMuted: next })
   }
 
   function handleSoloToggle() {
     const next = !soloed
     audioEngine.setSoloed(trackId, next)
     onSoloChange(trackId)
-    void updateTrackMix({ trackId, isSoloed: next })
+    if (canEditMix) void updateTrackMix({ trackId, isSoloed: next })
   }
 
   function handleTimelineClick(e: React.MouseEvent<HTMLDivElement>) {
@@ -208,7 +211,7 @@ export default function TrackRow({
 
   return (
     <div className="relative z-10 grid min-h-24 grid-cols-[256px_minmax(560px,1fr)] border-b border-white/10">
-      <div className="sticky left-0 z-20 border-r border-white/10 bg-[#101018]">
+      <div className="sticky left-0 z-40 border-r border-white/10 bg-[#101018]">
         <div className="flex h-full">
           <div className="w-1.5 shrink-0" style={{ backgroundColor: accentColor }} />
           <div className="min-w-0 flex-1 px-3 py-3">
@@ -233,7 +236,7 @@ export default function TrackRow({
             <div className="mt-3 flex items-center gap-2">
               <button
                 onClick={handleMuteToggle}
-                disabled={isLoading}
+                disabled={isLoading || !canEditMix}
                 aria-pressed={state.muted}
                 className={`h-7 w-8 rounded border text-xs font-semibold disabled:opacity-50 ${
                   state.muted
@@ -246,7 +249,7 @@ export default function TrackRow({
 
               <button
                 onClick={handleSoloToggle}
-                disabled={isLoading}
+                disabled={isLoading || !canEditMix}
                 aria-pressed={soloed}
                 className={`h-7 w-8 rounded border text-xs font-semibold disabled:opacity-50 ${
                   soloed
@@ -264,8 +267,8 @@ export default function TrackRow({
                 step={0.01}
                 value={state.volume}
                 onChange={handleVolumeChange}
-                disabled={isLoading}
-                className="h-1 min-w-0 flex-1 accent-[#7c3aed]"
+                disabled={isLoading || !canEditMix}
+                className="h-1 min-w-0 flex-1 accent-[#7c3aed] disabled:opacity-50"
                 aria-label={`${trackName} volume`}
               />
             </div>

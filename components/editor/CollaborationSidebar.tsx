@@ -45,25 +45,16 @@ import {
   type CommentFilter,
 } from '@/lib/comments/filter'
 import { audioEngine } from '@/lib/audio/audio-engine'
-import { useBroadcastEvent } from '@/lib/realtime/liveblocks'
+import { useBroadcastEvent, useOthers, useSelf } from '@/lib/realtime/liveblocks'
+import type { ActivityDto } from '@/lib/db/queries/activity'
 import type { MemberDto } from '@/components/editor/ProjectEditorWorkspace'
+
+export type { ActivityDto }
 
 export type CommentTarget = {
   trackId: string | null
   trackName: string | null
   timestampSeconds: number
-}
-
-export type ActivityDto = {
-  id: string
-  projectId: string
-  actorUserId: string | null
-  actorName: string | null
-  type: string
-  targetType: string | null
-  targetId: string | null
-  metadata: Record<string, unknown> | null
-  createdAt: string
 }
 
 type SidebarTab = 'comments' | 'versions' | 'people' | 'activity'
@@ -229,6 +220,17 @@ export default function CollaborationSidebar({
 
   const broadcast = useBroadcastEvent()
 
+  // Presence: deduplicate by internal user ID (same user, multiple tabs = 1).
+  const presenceSelf = useSelf()
+  const presenceOthers = useOthers((o) => o)
+  const presenceSelfId = presenceSelf?.info.id
+  const uniquePresenceOthers = [
+    ...new Map(
+      presenceOthers.filter((o) => o.info.id !== presenceSelfId).map((o) => [o.info.id, o])
+    ).values(),
+  ]
+  const onlineCount = uniquePresenceOthers.length + (presenceSelf ? 1 : 0)
+
   const counts = countByFilter(comments)
   const selectedComment = selectedCommentId
     ? (comments.find((c) => c.id === selectedCommentId) ?? null)
@@ -299,6 +301,7 @@ export default function CollaborationSidebar({
       try {
         const deleted = await deleteComment(comment.id)
         onCommentDeleted(deleted.id)
+        broadcast({ type: 'comment.deleted', projectId, commentId: deleted.id })
       } catch (err) {
         setActionError(err instanceof Error ? err.message : 'Could not delete comment.')
       }
@@ -314,6 +317,7 @@ export default function CollaborationSidebar({
           isPinned: !comment.isPinned,
         })
         onCommentUpdated(updated)
+        broadcast({ type: 'comment.pinned', projectId, commentId: comment.id })
       } catch (err) {
         setActionError(err instanceof Error ? err.message : 'Could not update pin.')
       }
@@ -351,6 +355,7 @@ export default function CollaborationSidebar({
           description: versionDesc || undefined,
         })
         onVersionCreated(version)
+        broadcast({ type: 'version.created', projectId, versionId: version.id })
         setVersionFormOpen(false)
         setVersionName('')
         setVersionDesc('')
@@ -373,6 +378,7 @@ export default function CollaborationSidebar({
           projectId,
         })
         onRestoreComplete(safetySnapshot, restoredTracks)
+        broadcast({ type: 'version.restored', projectId, versionId: selectedVersionId })
         setSelectedVersionId(null)
         setRestoreConfirm(false)
       } catch (err) {
@@ -388,7 +394,16 @@ export default function CollaborationSidebar({
       setInviteError(null)
       setNewInviteToken(null)
       try {
-        const invite = await createInvite({ workspaceId, email: inviteEmail, role: inviteRole })
+        // viewer/commenter invites are project-scoped so they don't grant access
+        // to all workspace projects — only the project they were invited from.
+        const scopedProjectId =
+          inviteRole === 'viewer' || inviteRole === 'commenter' ? projectId : undefined
+        const invite = await createInvite({
+          workspaceId,
+          email: inviteEmail,
+          role: inviteRole,
+          projectId: scopedProjectId,
+        })
         onInviteCreated(invite)
         setInviteEmail('')
         setNewInviteToken(invite.token)
@@ -457,6 +472,7 @@ export default function CollaborationSidebar({
         const link = await createShareLink({ projectId, accessLevel })
         onShareLinkCreated(link)
         setNewShareTokens((cur) => ({ ...cur, [accessLevel]: link.rawToken }))
+        broadcast({ type: 'activity.created', projectId })
       } catch (err) {
         setShareLinkError(err instanceof Error ? err.message : 'Could not create share link.')
       }
@@ -468,6 +484,7 @@ export default function CollaborationSidebar({
       try {
         await revokeShareLink({ linkId })
         onShareLinkRevoked(linkId)
+        broadcast({ type: 'activity.created', projectId })
         setNewShareTokens((cur) => {
           const next = { ...cur }
           delete next[accessLevel]
@@ -537,7 +554,7 @@ export default function CollaborationSidebar({
                 : 'text-slate-500 hover:text-slate-300',
             ].join(' ')}
           >
-            People {members.length > 0 ? `(${members.length})` : ''}
+            People {onlineCount > 0 ? `(${onlineCount})` : ''}
           </button>
           <button
             type="button"

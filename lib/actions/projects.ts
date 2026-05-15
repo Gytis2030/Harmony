@@ -3,6 +3,7 @@
 import { auth } from '@clerk/nextjs/server'
 import { and, eq } from 'drizzle-orm'
 import { redirect } from 'next/navigation'
+import { revalidatePath } from 'next/cache'
 import { db } from '@/lib/db'
 import { getUserByClerkId } from '@/lib/db/queries/users'
 import { projects, workspaces, workspaceMembers } from '@/lib/db/schema'
@@ -38,4 +39,39 @@ export async function createProject(formData: FormData) {
     .returning({ id: projects.id })
 
   redirect(`/projects/${project.id}`)
+}
+
+export async function archiveProject(projectId: string) {
+  const { userId: clerkId } = auth()
+  if (!clerkId) throw new Error('Unauthorized')
+
+  const user = await getUserByClerkId(clerkId)
+  if (!user) throw new Error('User not found')
+
+  const [row] = await db
+    .select({ workspaceId: projects.workspaceId })
+    .from(projects)
+    .where(eq(projects.id, projectId))
+    .limit(1)
+
+  if (!row) throw new Error('Project not found')
+
+  const [membership] = await db
+    .select({ role: workspaceMembers.role })
+    .from(workspaceMembers)
+    .where(
+      and(eq(workspaceMembers.workspaceId, row.workspaceId), eq(workspaceMembers.userId, user.id))
+    )
+    .limit(1)
+
+  if (!membership || (membership.role !== 'owner' && membership.role !== 'editor')) {
+    throw new Error('Forbidden')
+  }
+
+  await db
+    .update(projects)
+    .set({ deletedAt: new Date(), updatedAt: new Date() })
+    .where(eq(projects.id, projectId))
+
+  revalidatePath('/dashboard')
 }

@@ -12,7 +12,7 @@ import { getWorkspaceMembers, getWorkspacePendingInvites } from '@/lib/db/querie
 import { getRecentActivity } from '@/lib/db/queries/activity'
 import { listVersions } from '@/lib/actions/versions'
 import type { ShareLinkDto } from '@/lib/actions/share-links'
-import type { ActivityDto } from '@/components/editor/CollaborationSidebar'
+import type { ActivityDto } from '@/lib/db/queries/activity'
 import ProjectEditorWorkspace from '@/components/editor/ProjectEditorWorkspace'
 
 interface Props {

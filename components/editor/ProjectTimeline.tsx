@@ -34,6 +34,7 @@ interface Props {
   selectedCommentId: string | null
   soloedTrackId: string | null
   canUploadTracks?: boolean
+  canEditMix?: boolean
   onSoloChange: (trackId: string) => void
   onProjectCommentTarget: (timestampSeconds: number) => void
   onTrackCommentTarget: (trackId: string, trackName: string, timestampSeconds: number) => void
@@ -68,6 +69,7 @@ export default function ProjectTimeline({
   selectedCommentId,
   soloedTrackId,
   canUploadTracks = false,
+  canEditMix = false,
   onSoloChange,
   onProjectCommentTarget,
   onTrackCommentTarget,
@@ -114,6 +116,7 @@ export default function ProjectTimeline({
     <section className="min-w-0 bg-[#08080d]">
       <div className="border-b border-white/10 bg-[#101018] px-4 py-3 sm:px-5">
         <ProjectTransport
+          projectId={projectId}
           zoom={zoom}
           bpm={bpm}
           timeSignature={timeSignature}
@@ -182,6 +185,7 @@ export default function ProjectTimeline({
                 comments={comments.filter((comment) => comment.trackId === track.id)}
                 commentMode={commentMode}
                 selectedCommentId={selectedCommentId}
+                canEditMix={canEditMix}
                 onTrackLoaded={handleTrackLoaded}
                 onSoloChange={onSoloChange}
                 onCommentTarget={onTrackCommentTarget}
@@ -192,7 +196,7 @@ export default function ProjectTimeline({
                 key={track.id}
                 className="relative z-10 grid min-h-24 grid-cols-[256px_minmax(560px,1fr)] border-b border-white/10"
               >
-                <div className="sticky left-0 z-20 flex items-center border-r border-white/10 bg-[#101018] px-4">
+                <div className="sticky left-0 z-40 flex items-center border-r border-white/10 bg-[#101018] px-4">
                   <span className="truncate text-sm font-medium text-slate-200">{track.name}</span>
                 </div>
                 <div className="flex items-center px-5 text-xs uppercase tracking-wide text-slate-600">
@@ -204,9 +208,9 @@ export default function ProjectTimeline({
 
           {canUploadTracks && (
             <div className="relative z-10 grid min-h-24 grid-cols-[256px_minmax(560px,1fr)] border-b border-white/10">
-              <div className="sticky left-0 z-20 flex items-center border-r border-white/10 bg-[#101018] px-4">
+              <div className="sticky left-0 z-40 flex items-center border-r border-white/10 bg-[#101018] px-4">
                 <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Add track
+                  Add stem
                 </span>
               </div>
               <div className="px-4 py-3">

@@ -43,6 +43,7 @@ export async function getWorkspaceInviteByToken(token: string) {
       invitedBy: workspaceInvites.invitedBy,
       email: workspaceInvites.email,
       role: workspaceInvites.role,
+      projectId: workspaceInvites.projectId,
       token: workspaceInvites.token,
       status: workspaceInvites.status,
       expiresAt: workspaceInvites.expiresAt,

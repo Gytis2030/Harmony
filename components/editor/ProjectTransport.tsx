@@ -6,6 +6,7 @@ import { audioEngine, type EngineState } from '@/lib/audio/audio-engine'
 import { resumeAudioContext } from '@/lib/audio/audio-context'
 
 interface Props {
+  projectId: string
   zoom: number
   bpm: number | null
   timeSignature: string
@@ -33,6 +34,7 @@ function isEditableTarget(target: EventTarget | null): boolean {
 }
 
 export default function ProjectTransport({
+  projectId,
   zoom,
   bpm,
   timeSignature,
@@ -41,10 +43,19 @@ export default function ProjectTransport({
   onZoomIn,
   onZoomOut,
 }: Props) {
+  const volumeKey = `harmony:project:${projectId}:masterVolume`
+
   // Lazy initializer reads real engine state on first render — prevents stale
   // button state when the component remounts mid-session.
   const [engineState, setEngineState] = useState<EngineState>(() => audioEngine.state)
-  const [masterVolume, setMasterVolume] = useState(1)
+  const [masterVolume, setMasterVolume] = useState(() => {
+    try {
+      const stored = localStorage.getItem(`harmony:project:${projectId}:masterVolume`)
+      return stored !== null ? parseFloat(stored) : 1
+    } catch {
+      return 1
+    }
+  })
 
   const positionSpanRef = useRef<HTMLSpanElement>(null)
   const rafRef = useRef<number>(0)
@@ -56,6 +67,16 @@ export default function ProjectTransport({
       audioEngine.unloadAllTracks()
     }
   }, [])
+
+  // Apply persisted volume to engine on mount and whenever it changes.
+  useEffect(() => {
+    audioEngine.setMasterVolume(masterVolume)
+    try {
+      localStorage.setItem(volumeKey, String(masterVolume))
+    } catch {
+      // localStorage may be unavailable (private browsing, quota exceeded)
+    }
+  }, [masterVolume, volumeKey])
 
   // RAF loop: update position display directly in the DOM to avoid re-rendering
   // the React tree on every frame.
@@ -111,9 +132,7 @@ export default function ProjectTransport({
   })
 
   function handleMasterVolume(e: React.ChangeEvent<HTMLInputElement>) {
-    const value = parseFloat(e.target.value)
-    setMasterVolume(value)
-    audioEngine.setMasterVolume(value)
+    setMasterVolume(parseFloat(e.target.value))
   }
 
   const isLoading = engineState === 'loading'

@@ -225,10 +225,20 @@ export async function restoreVersion(params: {
   return { safetySnapshot, restoredCount, restoredTracks }
 }
 
-export async function listVersions(projectId: string): Promise<VersionDto[]> {
+// Client-callable fetch for real-time version refresh. Accepts both workspace
+// members and share-grant users (mirrors the comment fetch pattern).
+export async function fetchProjectVersions(projectId: string): Promise<VersionDto[]> {
   const user = await requireUser()
-  await requireProjectMembership(projectId, user.id)
 
+  // Workspace member OR share grant access.
+  const { getProjectByIdWithShareGrant } = await import('@/lib/db/queries/projects')
+  const accessible = await getProjectByIdWithShareGrant(projectId, user.id)
+  if (!accessible) throw new Error('Forbidden')
+
+  return listVersionsInternal(projectId)
+}
+
+async function listVersionsInternal(projectId: string): Promise<VersionDto[]> {
   const rows = await db
     .select({
       id: projectVersions.id,
@@ -256,4 +266,10 @@ export async function listVersions(projectId: string): Promise<VersionDto[]> {
     creatorName: r.creatorName ?? r.creatorEmail,
     createdAt: r.createdAt.toISOString(),
   }))
+}
+
+export async function listVersions(projectId: string): Promise<VersionDto[]> {
+  const user = await requireUser()
+  await requireProjectMembership(projectId, user.id)
+  return listVersionsInternal(projectId)
 }

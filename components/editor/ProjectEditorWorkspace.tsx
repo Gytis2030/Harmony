@@ -15,6 +15,8 @@ import { fetchProjectComments } from '@/lib/actions/comments'
 import type { InviteDto } from '@/lib/actions/invites'
 import type { ShareLinkDto } from '@/lib/actions/share-links'
 import type { RestoredTrackMix, VersionDto } from '@/lib/actions/versions'
+import { fetchProjectVersions } from '@/lib/actions/versions'
+import { fetchProjectActivity } from '@/lib/actions/activity'
 import { audioEngine } from '@/lib/audio/audio-engine'
 import { RoomProvider, useEventListener } from '@/lib/realtime/liveblocks'
 
@@ -95,7 +97,7 @@ function ProjectEditorInner({
   const [members, setMembers] = useState(initialMembers)
   const [invites, setInvites] = useState(initialInvites)
   const [shareLinks, setShareLinks] = useState(initialShareLinks)
-  const [activity] = useState(initialActivity)
+  const [activity, setActivity] = useState(initialActivity)
   const [tracks, setTracks] = useState(initialTracks)
   const [soloedTrackId, setSoloedTrackId] = useState<string | null>(
     () => initialTracks.find((t) => t.isSoloed)?.id ?? null
@@ -110,8 +112,30 @@ function ProjectEditorInner({
 
   useEventListener(({ event }) => {
     if (event.projectId !== projectId) return
+
+    if (event.type === 'version.created' || event.type === 'version.restored') {
+      fetchProjectVersions(projectId)
+        .then(setVersions)
+        .catch(() => {})
+      fetchProjectActivity(projectId)
+        .then(setActivity)
+        .catch(() => {})
+      return
+    }
+
+    if (event.type === 'activity.created') {
+      fetchProjectActivity(projectId)
+        .then(setActivity)
+        .catch(() => {})
+      return
+    }
+
+    // comment.* events: refresh comments and activity
     fetchProjectComments(projectId)
-      .then((fresh) => setComments(fresh))
+      .then(setComments)
+      .catch(() => {})
+    fetchProjectActivity(projectId)
+      .then(setActivity)
       .catch(() => {})
   })
 
@@ -144,12 +168,19 @@ function ProjectEditorInner({
     setTarget(null)
   }
 
+  function refreshActivity() {
+    fetchProjectActivity(projectId)
+      .then(setActivity)
+      .catch(() => {})
+  }
+
   function handleCommentCreated(comment: CommentDto) {
     setComments((current) =>
       [...current, comment].sort((a, b) => a.timestampSeconds - b.timestampSeconds)
     )
     cancelComment()
     setSelectedCommentId(comment.id)
+    refreshActivity()
   }
 
   function handleCommentUpdated(comment: CommentDto) {
@@ -160,6 +191,7 @@ function ProjectEditorInner({
           : item
       )
     )
+    refreshActivity()
   }
 
   function handleCommentDeleted(commentId: string) {
@@ -175,10 +207,12 @@ function ProjectEditorInner({
           : comment
       )
     )
+    refreshActivity()
   }
 
   function handleVersionCreated(version: VersionDto) {
     setVersions((current) => [version, ...current])
+    refreshActivity()
   }
 
   function handleRestoreComplete(safetySnapshot: VersionDto, restoredTracks: RestoredTrackMix[]) {
@@ -197,6 +231,7 @@ function ProjectEditorInner({
     )
     setSoloedTrackId(restoredTracks.find((r) => r.isSoloed)?.id ?? null)
     router.refresh()
+    refreshActivity()
   }
 
   return (
@@ -236,6 +271,7 @@ function ProjectEditorInner({
           selectedCommentId={selectedCommentId}
           soloedTrackId={soloedTrackId}
           canUploadTracks={canUploadTracks}
+          canEditMix={canUploadTracks}
           onSoloChange={(trackId) =>
             setSoloedTrackId((current) => (current === trackId ? null : trackId))
           }
@@ -283,7 +319,7 @@ function ProjectEditorInner({
           onMemberRoleChanged={(userId, role) =>
             setMembers((cur) => cur.map((m) => (m.userId === userId ? { ...m, role } : m)))
           }
-          onShareLinkCreated={(link) =>
+          onShareLinkCreated={(link) => {
             setShareLinks((cur) => {
               // Replace existing link of same access level (auto-revoked on server)
               const filtered = cur.filter((l) => l.accessLevel !== link.accessLevel)
@@ -298,7 +334,8 @@ function ProjectEditorInner({
                 },
               ]
             })
-          }
+            refreshActivity()
+          }}
           onShareLinkRevoked={(id) => setShareLinks((cur) => cur.filter((l) => l.id !== id))}
         />
       </div>

@@ -7,7 +7,7 @@ import { redirect } from 'next/navigation'
 import { db } from '@/lib/db'
 import { getUserByClerkId } from '@/lib/db/queries/users'
 import { getWorkspaceInviteByToken, getWorkspacePendingInvites } from '@/lib/db/queries/workspaces'
-import { workspaceInvites, workspaceMembers } from '@/lib/db/schema'
+import { projectShareGrants, workspaceInvites, workspaceMembers } from '@/lib/db/schema'
 
 export type InviteDto = {
   id: string
@@ -79,6 +79,7 @@ export async function createInvite(params: {
   workspaceId: string
   email: string
   role: WorkspaceMemberRole
+  projectId?: string
 }): Promise<InviteDto> {
   const user = await requireUser()
   const callerRole = await requireWorkspaceMembership(params.workspaceId, user.id)
@@ -114,6 +115,7 @@ export async function createInvite(params: {
       invitedBy: user.id,
       email,
       role: params.role,
+      projectId: params.projectId ?? null,
       token,
       expiresAt,
     })
@@ -182,12 +184,35 @@ export async function acceptInvite(token: string, redirectTo?: string): Promise<
     .limit(1)
 
   if (!existing) {
+    const isProjectScoped =
+      invite.projectId !== null && (invite.role === 'viewer' || invite.role === 'commenter')
+
     await db.transaction(async (tx) => {
-      await tx.insert(workspaceMembers).values({
-        workspaceId: invite.workspaceId,
-        userId: user.id,
-        role: invite.role,
-      })
+      if (isProjectScoped) {
+        // Project-scoped invite: grant access to ONE project only, not the whole workspace.
+        // shareLinkId is nullable (migration 0009) so invite-based grants omit it.
+        await tx
+          .insert(projectShareGrants)
+          .values({
+            projectId: invite.projectId!,
+            userId: user.id,
+            accessLevel: invite.role === 'commenter' ? 'comment' : 'view',
+          })
+          .onConflictDoUpdate({
+            target: [projectShareGrants.projectId, projectShareGrants.userId],
+            set: {
+              accessLevel: invite.role === 'commenter' ? 'comment' : 'view',
+              grantedAt: new Date(),
+            },
+          })
+      } else {
+        // Workspace-level invite (owner/editor): full workspace membership.
+        await tx.insert(workspaceMembers).values({
+          workspaceId: invite.workspaceId,
+          userId: user.id,
+          role: invite.role,
+        })
+      }
       await tx
         .update(workspaceInvites)
         .set({ status: 'accepted', acceptedBy: user.id, acceptedAt: new Date() })

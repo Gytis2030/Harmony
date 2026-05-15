@@ -10,7 +10,7 @@ interface PresenceAvatarsProps {
 export default function PresenceAvatars({ className = '', maxVisible = 3 }: PresenceAvatarsProps) {
   const status = useStatus()
   const self = useSelf()
-  const others = useOthers()
+  const others = useOthers((others) => others)
 
   // Show a loading skeleton while the room connection is being established
   if (status === 'initial' || status === 'connecting') {
@@ -32,15 +32,16 @@ export default function PresenceAvatars({ className = '', maxVisible = 3 }: Pres
 
   const visibleOthers = uniqueOtherUsers.slice(0, maxVisible)
   const overflow = Math.max(0, uniqueOtherUsers.length - maxVisible)
+  const totalOnline = uniqueOtherUsers.length + (self ? 1 : 0)
 
   return (
     <div className={`flex items-center gap-2 ${className}`}>
-      {uniqueOtherUsers.length > 0 && (
-        <div className="hidden text-right text-xs text-slate-500 sm:block">
-          <p className="font-medium uppercase tracking-wide text-slate-400">Collaborators</p>
-          <p>{uniqueOtherUsers.length === 1 ? '1 online' : `${uniqueOtherUsers.length} online`}</p>
-        </div>
-      )}
+      <div className="hidden text-right text-xs text-slate-500 sm:block">
+        <p className="font-medium uppercase tracking-wide text-slate-400">
+          {totalOnline === 1 ? 'Just you' : 'Collaborators'}
+        </p>
+        <p>{totalOnline === 1 ? 'Online' : `${totalOnline} online`}</p>
+      </div>
 
       <div className="flex -space-x-2">
         {visibleOthers.map((other) => (

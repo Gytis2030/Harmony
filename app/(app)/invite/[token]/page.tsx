@@ -4,7 +4,7 @@ import { redirect } from 'next/navigation'
 import { getUserByClerkId } from '@/lib/db/queries/users'
 import { getWorkspaceInviteByToken } from '@/lib/db/queries/workspaces'
 import { db } from '@/lib/db'
-import { workspaceMembers, workspaces } from '@/lib/db/schema'
+import { projectShareGrants, workspaceMembers, workspaces } from '@/lib/db/schema'
 import { and, eq } from 'drizzle-orm'
 import { acceptInvite } from '@/lib/actions/invites'
 
@@ -55,27 +55,40 @@ export default async function AcceptInvitePage({ params, searchParams }: Props) 
     )
   }
 
-  // Sanitise the ?project= param — only accept a valid UUID-shaped string.
+  // Prefer invite.projectId (stored at creation) over the URL ?project= param.
   const projectId =
-    typeof searchParams.project === 'string' && /^[\w-]{36}$/.test(searchParams.project)
+    invite.projectId ??
+    (typeof searchParams.project === 'string' && /^[\w-]{36}$/.test(searchParams.project)
       ? searchParams.project
-      : null
+      : null)
   const destination = projectId ? `/projects/${projectId}` : '/dashboard'
 
-  // Already a member → send them straight to the project (or dashboard).
-  const [existing] = await db
-    .select({ role: workspaceMembers.role })
-    .from(workspaceMembers)
-    .where(
-      and(
-        eq(workspaceMembers.workspaceId, invite.workspaceId),
-        eq(workspaceMembers.userId, user.id)
-      )
-    )
-    .limit(1)
+  const isProjectScoped =
+    projectId !== null && (invite.role === 'viewer' || invite.role === 'commenter')
 
-  if (existing) {
-    redirect(destination)
+  if (isProjectScoped) {
+    // Already has a share grant → go straight to the project.
+    const [existingGrant] = await db
+      .select({ grantedAt: projectShareGrants.grantedAt })
+      .from(projectShareGrants)
+      .where(
+        and(eq(projectShareGrants.projectId, projectId), eq(projectShareGrants.userId, user.id))
+      )
+      .limit(1)
+    if (existingGrant) redirect(destination)
+  } else {
+    // Already a workspace member → send them straight to the project (or dashboard).
+    const [existing] = await db
+      .select({ role: workspaceMembers.role })
+      .from(workspaceMembers)
+      .where(
+        and(
+          eq(workspaceMembers.workspaceId, invite.workspaceId),
+          eq(workspaceMembers.userId, user.id)
+        )
+      )
+      .limit(1)
+    if (existing) redirect(destination)
   }
 
   // Fetch workspace name for display
