@@ -1,13 +1,15 @@
 'use client'
 
-import { useEffect, useReducer, useRef } from 'react'
-import { MessageSquare, MoreHorizontal } from 'lucide-react'
+import { useEffect, useReducer, useRef, useState } from 'react'
+import { MessageSquare, MoreHorizontal, Trash2, X } from 'lucide-react'
+import { useRouter } from 'next/navigation'
 import { audioEngine, type EngineState } from '@/lib/audio/audio-engine'
-import { updateTrackMix } from '@/lib/actions/tracks'
+import { removeTrack, updateTrackMix } from '@/lib/actions/tracks'
 import Waveform from '@/components/editor/Waveform'
 import type { CommentDto } from '@/lib/actions/comments'
 
 interface Props {
+  projectId: string
   trackId: string
   audioFileId: string
   trackName: string
@@ -27,6 +29,7 @@ interface Props {
   onSoloChange: (trackId: string) => void
   onCommentTarget: (trackId: string, trackName: string, timestampSeconds: number) => void
   onCommentSelect: (commentId: string) => void
+  onRemove?: () => void
 }
 
 interface RowState {
@@ -74,6 +77,7 @@ function formatFileSize(bytes: number): string {
 }
 
 export default function TrackRow({
+  projectId,
   trackId,
   audioFileId,
   trackName,
@@ -93,6 +97,7 @@ export default function TrackRow({
   onSoloChange,
   onCommentTarget,
   onCommentSelect,
+  onRemove,
 }: Props) {
   const [state, dispatch] = useReducer(reducer, {
     engineState: 'idle',
@@ -102,10 +107,15 @@ export default function TrackRow({
     audioBuffer: null,
   })
 
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [confirmRemove, setConfirmRemove] = useState(false)
+  const [isRemoving, setIsRemoving] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
   const mountedRef = useRef(true)
   const didMountVolumeRef = useRef(false)
   const prevInitialVolumeRef = useRef(initialVolume)
   const timelineRef = useRef<HTMLDivElement>(null)
+  const router = useRouter()
   useEffect(() => {
     mountedRef.current = true
     return () => {
@@ -174,6 +184,34 @@ export default function TrackRow({
     return () => window.clearTimeout(timeout)
   }, [trackId, state.volume, canEditMix])
 
+  // Close the three-dot menu on outside click.
+  useEffect(() => {
+    if (!menuOpen) return
+    function handleOutside(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false)
+        setConfirmRemove(false)
+      }
+    }
+    document.addEventListener('mousedown', handleOutside)
+    return () => document.removeEventListener('mousedown', handleOutside)
+  }, [menuOpen])
+
+  async function handleRemoveConfirm() {
+    setIsRemoving(true)
+    try {
+      await removeTrack({ trackId, projectId })
+    } catch {
+      setIsRemoving(false)
+      setMenuOpen(false)
+      setConfirmRemove(false)
+      return
+    }
+    audioEngine.unloadTrack(trackId)
+    onRemove?.()
+    router.refresh()
+  }
+
   function handleVolumeChange(e: React.ChangeEvent<HTMLInputElement>) {
     const value = parseFloat(e.target.value)
     dispatch({ type: 'set_volume', payload: value })
@@ -210,7 +248,7 @@ export default function TrackRow({
   const durationLabel = state.audioBuffer ? formatDuration(state.audioBuffer.duration) : '--:--'
 
   return (
-    <div className="relative z-10 grid min-h-24 grid-cols-[256px_minmax(560px,1fr)] border-b border-white/10">
+    <div className="relative grid min-h-24 grid-cols-[256px_minmax(560px,1fr)] border-b border-white/10">
       <div className="sticky left-0 z-40 border-r border-white/10 bg-[#101018]">
         <div className="flex h-full">
           <div className="w-1.5 shrink-0" style={{ backgroundColor: accentColor }} />
@@ -224,13 +262,59 @@ export default function TrackRow({
                   {durationLabel} / {formatFileSize(sizeBytes)}
                 </p>
               </div>
-              <button
-                type="button"
-                className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded text-slate-500 transition hover:bg-white/5 hover:text-slate-200"
-                aria-label={`${trackName} menu`}
-              >
-                <MoreHorizontal className="h-4 w-4" />
-              </button>
+              {canEditMix && (
+                <div ref={menuRef} className="relative">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMenuOpen((o) => !o)
+                      setConfirmRemove(false)
+                    }}
+                    className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded text-slate-500 transition hover:bg-white/5 hover:text-slate-200"
+                    aria-label={`${trackName} menu`}
+                  >
+                    <MoreHorizontal className="h-4 w-4" />
+                  </button>
+
+                  {menuOpen && (
+                    <div className="absolute right-0 top-8 z-50 min-w-[140px] rounded border border-white/10 bg-[#14141e] shadow-xl">
+                      {!confirmRemove ? (
+                        <button
+                          type="button"
+                          onClick={() => setConfirmRemove(true)}
+                          className="flex w-full items-center gap-2 px-3 py-2 text-xs text-red-300 transition hover:bg-red-400/10"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                          Remove stem
+                        </button>
+                      ) : (
+                        <div className="px-3 py-2">
+                          <p className="mb-2 text-[11px] text-slate-300">Remove this stem?</p>
+                          <div className="flex gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => setConfirmRemove(false)}
+                              disabled={isRemoving}
+                              className="flex items-center gap-1 rounded border border-white/10 px-2 py-1 text-[10px] text-slate-400 hover:bg-white/5"
+                            >
+                              <X className="h-3 w-3" />
+                              Cancel
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleRemoveConfirm}
+                              disabled={isRemoving}
+                              className="rounded bg-red-600 px-2 py-1 text-[10px] font-semibold text-white transition hover:bg-red-500 disabled:opacity-50"
+                            >
+                              {isRemoving ? 'Removing…' : 'Remove'}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             <div className="mt-3 flex items-center gap-2">

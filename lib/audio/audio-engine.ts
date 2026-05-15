@@ -306,6 +306,29 @@ class AudioEngine {
     return this.loadedTrackIds().reduce((max, id) => Math.max(max, this.getTrackDuration(id)), 0)
   }
 
+  unloadTrack(trackId: string): void {
+    const source = this._activeSources.get(trackId)
+    if (source) {
+      source.onended = null
+      try {
+        source.stop()
+      } catch {
+        /* already stopped */
+      }
+      this._activeSources.delete(trackId)
+    }
+    const gain = this._trackGains.get(trackId)
+    if (gain) {
+      gain.disconnect()
+      this._trackGains.delete(trackId)
+    }
+    this._trackToFile.delete(trackId)
+    this._trackMuted.delete(trackId)
+    this._trackVolumes.delete(trackId)
+    this._soloedTracks.delete(trackId)
+    this._loadingSet.delete(trackId)
+  }
+
   // Keeps _bufferCache intact so re-decoding is skipped on fast re-navigation.
   unloadAllTracks(): void {
     this.stop()

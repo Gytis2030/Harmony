@@ -2,108 +2,157 @@
 
 import { useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Upload } from 'lucide-react'
+import { CheckCircle, Upload, XCircle } from 'lucide-react'
 import { addTrack } from '@/lib/actions/tracks'
-import { Button } from '@/components/ui/button'
 
-type UploadState =
-  | { status: 'idle' }
+type FileStatus =
+  | { status: 'pending' }
   | { status: 'uploading'; progress: number }
   | { status: 'done' }
   | { status: 'error'; message: string }
+
+interface FileEntry {
+  file: File
+  status: FileStatus
+}
 
 interface Props {
   projectId: string
 }
 
+const ACCEPTED = 'audio/wav,audio/mpeg'
+const MAX_BYTES = 100 * 1024 * 1024 // 100 MB
+
+async function uploadOne(
+  file: File,
+  projectId: string,
+  onProgress: (p: number) => void
+): Promise<void> {
+  const signRes = await fetch('/api/uploads/sign', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      filename: file.name,
+      contentType: file.type,
+      sizeBytes: file.size,
+      projectId,
+    }),
+  })
+
+  if (!signRes.ok) {
+    const text = await signRes.text()
+    throw new Error(text || `Sign request failed (${signRes.status})`)
+  }
+
+  const { url, r2Key } = (await signRes.json()) as { url: string; r2Key: string }
+
+  await new Promise<void>((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    xhr.open('PUT', url)
+    xhr.setRequestHeader('Content-Type', file.type)
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100))
+    }
+    xhr.onload = () =>
+      xhr.status >= 200 && xhr.status < 300
+        ? resolve()
+        : reject(new Error(`R2 upload failed: ${xhr.status}`))
+    xhr.onerror = () => reject(new Error('Network error during upload'))
+    xhr.send(file)
+  })
+
+  await addTrack({
+    r2Key,
+    filename: file.name,
+    mimeType: file.type,
+    sizeBytes: file.size,
+    projectId,
+  })
+}
+
+function validateFile(file: File): string | null {
+  if (!['audio/wav', 'audio/mpeg', 'audio/mp3'].includes(file.type)) {
+    return `${file.name}: unsupported format (WAV/MP3 only)`
+  }
+  if (file.size > MAX_BYTES) {
+    return `${file.name}: exceeds 100 MB limit`
+  }
+  return null
+}
+
 export function UploadWidget({ projectId }: Props) {
-  const [state, setState] = useState<UploadState>({ status: 'idle' })
+  const [entries, setEntries] = useState<FileEntry[]>([])
   const [isDragOver, setIsDragOver] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const router = useRouter()
 
-  async function upload(file: File) {
-    setState({ status: 'uploading', progress: 0 })
+  const isUploading = entries.some(
+    (e) => e.status.status === 'uploading' || e.status.status === 'pending'
+  )
+  const allDone =
+    entries.length > 0 &&
+    entries.every((e) => e.status.status === 'done' || e.status.status === 'error')
 
-    try {
-      // 1. Get presigned PUT URL from our API route.
-      const signRes = await fetch('/api/uploads/sign', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          filename: file.name,
-          contentType: file.type,
-          sizeBytes: file.size,
-          projectId,
-        }),
-      })
+  function updateEntry(index: number, status: FileStatus) {
+    setEntries((cur) => cur.map((e, i) => (i === index ? { ...e, status } : e)))
+  }
 
-      if (!signRes.ok) {
-        const text = await signRes.text()
-        throw new Error(text || `Sign request failed (${signRes.status})`)
+  async function processFiles(files: File[]) {
+    const validated: { file: File; error: string | null }[] = files.map((f) => ({
+      file: f,
+      error: validateFile(f),
+    }))
+
+    const initial: FileEntry[] = validated.map(({ file, error }) => ({
+      file,
+      status: error ? { status: 'error', message: error } : { status: 'pending' },
+    }))
+
+    setEntries(initial)
+
+    let anySuccess = false
+
+    for (let i = 0; i < initial.length; i++) {
+      if (initial[i].status.status === 'error') continue
+
+      updateEntry(i, { status: 'uploading', progress: 0 })
+
+      try {
+        await uploadOne(initial[i].file, projectId, (p) =>
+          updateEntry(i, { status: 'uploading', progress: p })
+        )
+        updateEntry(i, { status: 'done' })
+        anySuccess = true
+      } catch (err) {
+        updateEntry(i, {
+          status: 'error',
+          message: err instanceof Error ? err.message : 'Upload failed.',
+        })
       }
-
-      const { url, r2Key } = (await signRes.json()) as { url: string; r2Key: string }
-
-      // 2. PUT the file directly to R2 using XHR for upload progress.
-      await new Promise<void>((resolve, reject) => {
-        const xhr = new XMLHttpRequest()
-        xhr.open('PUT', url)
-        xhr.setRequestHeader('Content-Type', file.type)
-
-        xhr.upload.onprogress = (e) => {
-          if (e.lengthComputable) {
-            const progress = Math.round((e.loaded / e.total) * 100)
-            setState({ status: 'uploading', progress })
-          }
-        }
-
-        xhr.onload = () => {
-          if (xhr.status >= 200 && xhr.status < 300) {
-            resolve()
-          } else {
-            reject(new Error(`R2 upload failed: ${xhr.status} ${xhr.statusText}`))
-          }
-        }
-
-        xhr.onerror = () => reject(new Error('Network error during upload'))
-        xhr.send(file)
-      })
-
-      // 3. Write the track + audio_file rows to the DB.
-      await addTrack({
-        r2Key,
-        filename: file.name,
-        mimeType: file.type,
-        sizeBytes: file.size,
-        projectId,
-      })
-
-      setState({ status: 'done' })
-      router.refresh()
-    } catch (err) {
-      setState({
-        status: 'error',
-        message: err instanceof Error ? err.message : 'Upload failed.',
-      })
     }
+
+    if (anySuccess) router.refresh()
   }
 
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (file) upload(file)
-    // Reset input so the same file can be re-selected after an error.
+    const files = Array.from(e.target.files ?? [])
+    if (files.length > 0) processFiles(files)
     e.target.value = ''
   }
 
   function handleDrop(e: React.DragEvent) {
     e.preventDefault()
     setIsDragOver(false)
-    const file = e.dataTransfer.files?.[0]
-    if (file) upload(file)
+    const files = Array.from(e.dataTransfer.files)
+    if (files.length > 0) processFiles(files)
   }
 
-  const isUploading = state.status === 'uploading'
+  function handleReset() {
+    setEntries([])
+    inputRef.current?.click()
+  }
+
+  const idle = entries.length === 0
 
   return (
     <div>
@@ -114,23 +163,24 @@ export function UploadWidget({ projectId }: Props) {
         }}
         onDragLeave={() => setIsDragOver(false)}
         onDrop={handleDrop}
+        onClick={() => !isUploading && idle && inputRef.current?.click()}
         className={[
           'flex min-h-[68px] items-center justify-between gap-4 rounded-md border border-dashed px-4 py-3 transition-colors',
           isDragOver ? 'border-[#7c3aed] bg-[#7c3aed]/15' : 'border-white/15 bg-white/[0.03]',
-          isUploading ? 'pointer-events-none opacity-60' : 'cursor-pointer',
+          !isUploading && idle ? 'cursor-pointer' : '',
         ].join(' ')}
-        onClick={() => !isUploading && inputRef.current?.click()}
       >
         <input
           ref={inputRef}
           type="file"
-          accept="audio/wav,audio/mpeg"
+          accept={ACCEPTED}
+          multiple
           className="sr-only"
           onChange={handleFileChange}
           disabled={isUploading}
         />
 
-        {state.status === 'idle' && (
+        {idle && (
           <>
             <div className="flex min-w-0 items-center gap-3">
               <div className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded border border-white/10 bg-black/30 text-slate-300">
@@ -138,9 +188,11 @@ export function UploadWidget({ projectId }: Props) {
               </div>
               <div className="min-w-0">
                 <p className="truncate text-sm font-medium text-slate-200">
-                  Drop a WAV or MP3, or click to browse
+                  Drop WAV or MP3 stems here, or click to browse
                 </p>
-                <p className="mt-1 text-xs text-slate-500">Max 100 MB</p>
+                <p className="mt-1 text-xs text-slate-500">
+                  Multiple files supported · Max 100 MB each
+                </p>
               </div>
             </div>
             <span className="hidden rounded border border-white/10 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-slate-400 sm:inline-flex">
@@ -149,40 +201,58 @@ export function UploadWidget({ projectId }: Props) {
           </>
         )}
 
-        {state.status === 'uploading' && (
-          <div className="w-full max-w-md">
-            <p className="mb-2 text-sm font-medium text-slate-200">
-              Uploading... {state.progress}%
-            </p>
-            <div className="h-2 w-full overflow-hidden rounded-full bg-white/10">
-              <div
-                className="h-full rounded-full bg-[#7c3aed] transition-all"
-                style={{ width: `${state.progress}%` }}
-              />
-            </div>
+        {!idle && (
+          <div className="min-w-0 flex-1 space-y-1.5">
+            {entries.map((entry, i) => {
+              const s = entry.status
+              return (
+                <div key={i} className="flex items-center gap-2 text-xs">
+                  {s.status === 'done' && (
+                    <CheckCircle className="h-3.5 w-3.5 shrink-0 text-emerald-400" />
+                  )}
+                  {s.status === 'error' && (
+                    <XCircle className="h-3.5 w-3.5 shrink-0 text-red-400" />
+                  )}
+                  {(s.status === 'pending' || s.status === 'uploading') && (
+                    <div className="h-3.5 w-3.5 shrink-0 rounded-full border-2 border-violet-400 border-t-transparent animate-spin" />
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <p
+                      className={[
+                        'truncate',
+                        s.status === 'done'
+                          ? 'text-emerald-300'
+                          : s.status === 'error'
+                            ? 'text-red-300'
+                            : 'text-slate-300',
+                      ].join(' ')}
+                    >
+                      {s.status === 'error' ? s.message : entry.file.name}
+                    </p>
+                    {s.status === 'uploading' && (
+                      <div className="mt-0.5 h-1 w-full overflow-hidden rounded-full bg-white/10">
+                        <div
+                          className="h-full rounded-full bg-[#7c3aed] transition-all"
+                          style={{ width: `${s.progress}%` }}
+                        />
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
           </div>
-        )}
-
-        {state.status === 'done' && (
-          <p className="text-sm font-medium text-emerald-300">Upload complete</p>
         )}
       </div>
 
-      {state.status === 'error' && (
-        <div className="mt-3 flex items-center justify-between rounded-md border border-red-400/30 bg-red-950/30 px-4 py-3">
-          <p className="text-sm text-red-200">{state.message}</p>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="ml-4 shrink-0 text-red-100 hover:bg-red-400/10 hover:text-white"
-            onClick={() => {
-              setState({ status: 'idle' })
-              inputRef.current?.click()
-            }}
-          >
-            Retry
-          </Button>
-        </div>
+      {allDone && (
+        <button
+          type="button"
+          onClick={handleReset}
+          className="mt-2 text-xs text-slate-500 transition hover:text-slate-300"
+        >
+          Upload more stems
+        </button>
       )}
     </div>
   )

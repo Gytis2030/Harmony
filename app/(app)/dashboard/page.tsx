@@ -28,24 +28,26 @@ export default async function DashboardPage() {
   }
   if (!user) redirect('/sign-in')
 
-  const projects = await getProjectsForUser(user.id)
+  const allProjects = await getProjectsForUser(user.id)
+  const myProjects = allProjects.filter((p) => p.isOwned)
+  const sharedProjects = allProjects.filter((p) => !p.isOwned)
+
+  const hasAnyProject = allProjects.length > 0
 
   return (
     <main className="min-h-screen bg-[#07070b] text-slate-100">
       <div className="mx-auto max-w-5xl px-4 py-12">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight">My Projects</h1>
+            <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
             <p className="mt-1 text-sm text-slate-500">
-              {projects.length === 0
-                ? 'No projects yet — create one to get started.'
-                : `${projects.length} ${projects.length === 1 ? 'project' : 'projects'}`}
+              {!hasAnyProject ? 'No projects yet — create one to get started.' : null}
             </p>
           </div>
           <CreateProjectDialog />
         </div>
 
-        {projects.length === 0 ? (
+        {!hasAnyProject ? (
           <div className="mt-24 flex flex-col items-center gap-6 text-center">
             <div className="flex h-16 w-16 items-center justify-center rounded-2xl border border-white/10 bg-[#0f0f1a]">
               <svg
@@ -71,16 +73,44 @@ export default async function DashboardPage() {
             <CreateProjectDialog label="Create your first project" />
           </div>
         ) : (
-          <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {projects.map((project) => (
-              <ProjectCard
-                key={project.id}
-                id={project.id}
-                name={project.name}
-                stemCount={project.stemCount}
-                updatedAt={project.updatedAt}
-              />
-            ))}
+          <div className="mt-8 space-y-10">
+            {myProjects.length > 0 && (
+              <section>
+                <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-slate-500">
+                  My Projects
+                </h2>
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  {myProjects.map((project) => (
+                    <ProjectCard
+                      key={project.id}
+                      id={project.id}
+                      name={project.name}
+                      stemCount={project.stemCount}
+                      updatedAt={project.updatedAt}
+                    />
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {sharedProjects.length > 0 && (
+              <section>
+                <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-slate-500">
+                  Shared with me
+                </h2>
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  {sharedProjects.map((project) => (
+                    <ProjectCard
+                      key={project.id}
+                      id={project.id}
+                      name={project.name}
+                      stemCount={project.stemCount}
+                      updatedAt={project.updatedAt}
+                    />
+                  ))}
+                </div>
+              </section>
+            )}
           </div>
         )}
       </div>

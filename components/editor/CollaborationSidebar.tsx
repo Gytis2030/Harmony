@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useEffect, useRef, useState, useTransition } from 'react'
 import {
   ArrowLeft,
   Check,
@@ -176,6 +176,14 @@ export default function CollaborationSidebar({
 }: Props) {
   const canManageVersions = currentUserRole === 'owner' || currentUserRole === 'editor'
   const [activeTab, setActiveTab] = useState<SidebarTab>('comments')
+
+  // When a comment is selected from a timeline pin, switch to comments tab and scroll it into view.
+  const prevSelectedCommentId = useRef<string | null>(null)
+  useEffect(() => {
+    if (!selectedCommentId || selectedCommentId === prevSelectedCommentId.current) return
+    prevSelectedCommentId.current = selectedCommentId
+    setActiveTab('comments')
+  }, [selectedCommentId])
   const [filter, setFilter] = useState<CommentFilter>('open')
   const [body, setBody] = useState('')
   const [replyBody, setReplyBody] = useState('')
@@ -1159,6 +1167,14 @@ function CommentList({
   canComment,
   onSelect,
 }: CommentListProps) {
+  const listRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!selectedCommentId || !listRef.current) return
+    const card = listRef.current.querySelector(`[data-comment-id="${selectedCommentId}"]`)
+    card?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+  }, [selectedCommentId])
+
   if (comments.length === 0) {
     const emptyMessages: Record<CommentFilter, string> = {
       open: canComment ? 'No open comments yet. Click + to leave a note.' : 'No open comments yet.',
@@ -1169,7 +1185,7 @@ function CommentList({
   }
 
   return (
-    <div className="space-y-2">
+    <div ref={listRef} className="space-y-2">
       {actionError && <p className="text-xs text-red-300">{actionError}</p>}
       {comments.map((comment) => {
         const isSelected = selectedCommentId === comment.id
@@ -1177,6 +1193,7 @@ function CommentList({
         return (
           <article
             key={comment.id}
+            data-comment-id={comment.id}
             onClick={() => onSelect(comment.id)}
             className={[
               'cursor-pointer rounded border p-3 transition',

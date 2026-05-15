@@ -5,7 +5,14 @@ import { and, count, eq, ne } from 'drizzle-orm'
 import { revalidatePath } from 'next/cache'
 import { db } from '@/lib/db'
 import { getUserByClerkId } from '@/lib/db/queries/users'
-import { audioFiles, projects, tracks, workspaceMembers } from '@/lib/db/schema'
+import {
+  audioFiles,
+  comments,
+  projectVersionTracks,
+  projects,
+  tracks,
+  workspaceMembers,
+} from '@/lib/db/schema'
 import { recordActivity } from '@/lib/db/queries/activity'
 
 export async function addTrack(params: {
@@ -79,6 +86,47 @@ export async function addTrack(params: {
     actorUserId: user.id,
     type: 'track.uploaded',
     metadata: { trackName, filename: params.filename },
+  })
+
+  revalidatePath(`/projects/${params.projectId}`)
+}
+
+export async function removeTrack(params: { trackId: string; projectId: string }) {
+  const { userId: clerkId } = auth()
+  if (!clerkId) throw new Error('Unauthorized')
+
+  const user = await getUserByClerkId(clerkId)
+  if (!user) throw new Error('User not found')
+
+  const [row] = await db
+    .select({ workspaceId: projects.workspaceId })
+    .from(projects)
+    .where(eq(projects.id, params.projectId))
+    .limit(1)
+
+  if (!row) throw new Error('Project not found')
+
+  const [membership] = await db
+    .select({ role: workspaceMembers.role })
+    .from(workspaceMembers)
+    .where(
+      and(eq(workspaceMembers.workspaceId, row.workspaceId), eq(workspaceMembers.userId, user.id))
+    )
+    .limit(1)
+
+  if (!membership || (membership.role !== 'owner' && membership.role !== 'editor')) {
+    throw new Error('Forbidden')
+  }
+
+  await db.transaction(async (tx) => {
+    // Remove the audio file first (FK: audio_files → tracks)
+    await tx.delete(audioFiles).where(eq(audioFiles.trackId, params.trackId))
+    // Null out track references in comments so they become project-level comments
+    await tx.update(comments).set({ trackId: null }).where(eq(comments.trackId, params.trackId))
+    // Remove version track snapshots for this track
+    await tx.delete(projectVersionTracks).where(eq(projectVersionTracks.trackId, params.trackId))
+    // Delete the track itself
+    await tx.delete(tracks).where(eq(tracks.id, params.trackId))
   })
 
   revalidatePath(`/projects/${params.projectId}`)

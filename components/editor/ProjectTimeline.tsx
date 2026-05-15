@@ -36,6 +36,7 @@ interface Props {
   canUploadTracks?: boolean
   canEditMix?: boolean
   onSoloChange: (trackId: string) => void
+  onTrackRemoved?: (trackId: string) => void
   onProjectCommentTarget: (timestampSeconds: number) => void
   onTrackCommentTarget: (trackId: string, trackName: string, timestampSeconds: number) => void
   onCommentSelect: (commentId: string | null) => void
@@ -71,6 +72,7 @@ export default function ProjectTimeline({
   canUploadTracks = false,
   canEditMix = false,
   onSoloChange,
+  onTrackRemoved,
   onProjectCommentTarget,
   onTrackCommentTarget,
   onCommentSelect,
@@ -120,6 +122,7 @@ export default function ProjectTimeline({
           zoom={zoom}
           bpm={bpm}
           timeSignature={timeSignature}
+          canEditTempo={canEditMix}
           canZoomIn={canZoomIn}
           canZoomOut={canZoomOut}
           onZoomIn={() => setZoomIndex((value) => Math.min(value + 1, ZOOM_LEVELS.length - 1))}
@@ -171,6 +174,7 @@ export default function ProjectTimeline({
             track.audioFile ? (
               <TrackRow
                 key={track.id}
+                projectId={projectId}
                 trackId={track.id}
                 audioFileId={track.audioFile.id}
                 trackName={track.name}
@@ -190,11 +194,12 @@ export default function ProjectTimeline({
                 onSoloChange={onSoloChange}
                 onCommentTarget={onTrackCommentTarget}
                 onCommentSelect={onCommentSelect}
+                onRemove={() => onTrackRemoved?.(track.id)}
               />
             ) : (
               <div
                 key={track.id}
-                className="relative z-10 grid min-h-24 grid-cols-[256px_minmax(560px,1fr)] border-b border-white/10"
+                className="relative grid min-h-24 grid-cols-[256px_minmax(560px,1fr)] border-b border-white/10"
               >
                 <div className="sticky left-0 z-40 flex items-center border-r border-white/10 bg-[#101018] px-4">
                   <span className="truncate text-sm font-medium text-slate-200">{track.name}</span>
@@ -207,7 +212,7 @@ export default function ProjectTimeline({
           )}
 
           {canUploadTracks && (
-            <div className="relative z-10 grid min-h-24 grid-cols-[256px_minmax(560px,1fr)] border-b border-white/10">
+            <div className="relative grid min-h-24 grid-cols-[256px_minmax(560px,1fr)] border-b border-white/10">
               <div className="sticky left-0 z-40 flex items-center border-r border-white/10 bg-[#101018] px-4">
                 <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                   Add stem

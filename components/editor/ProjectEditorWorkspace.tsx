@@ -275,6 +275,9 @@ function ProjectEditorInner({
           onSoloChange={(trackId) =>
             setSoloedTrackId((current) => (current === trackId ? null : trackId))
           }
+          onTrackRemoved={(trackId) =>
+            setTracks((current) => current.filter((t) => t.id !== trackId))
+          }
           onProjectCommentTarget={(timestampSeconds) =>
             startComment({ trackId: null, trackName: null, timestampSeconds })
           }

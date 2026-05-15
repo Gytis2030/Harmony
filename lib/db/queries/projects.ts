@@ -118,6 +118,7 @@ export async function getProjectsForUser(userId: string) {
       bpm: projects.bpm,
       createdAt: projects.createdAt,
       updatedAt: projects.updatedAt,
+      isOwned: workspaces.ownerId,
     })
     .from(projects)
     .innerJoin(workspaces, eq(projects.workspaceId, workspaces.id))
@@ -141,5 +142,14 @@ export async function getProjectsForUser(userId: string) {
       .map((c) => [c.projectId, c.stemCount])
   )
 
-  return rows.map((row) => ({ ...row, stemCount: countMap.get(row.id) ?? 0 }))
+  return rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    workspaceId: row.workspaceId,
+    bpm: row.bpm,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+    stemCount: countMap.get(row.id) ?? 0,
+    isOwned: row.isOwned === userId,
+  }))
 }
