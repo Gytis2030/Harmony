@@ -1,7 +1,7 @@
 'use server'
 
 import { auth } from '@clerk/nextjs/server'
-import { and, count, eq, ne } from 'drizzle-orm'
+import { and, eq, max, ne } from 'drizzle-orm'
 import { revalidatePath } from 'next/cache'
 import { db } from '@/lib/db'
 import { getUserByClerkId } from '@/lib/db/queries/users'
@@ -15,13 +15,28 @@ import {
 } from '@/lib/db/schema'
 import { recordActivity } from '@/lib/db/queries/activity'
 
+export type CreatedTrack = {
+  id: string
+  name: string
+  volume: number
+  isMuted: boolean
+  isSoloed: boolean
+  color: null
+  audioFile: {
+    id: string
+    originalFilename: string
+    sizeBytes: number
+    durationSeconds: null
+  }
+}
+
 export async function addTrack(params: {
   r2Key: string
   filename: string
   mimeType: string
   sizeBytes: number
   projectId: string
-}) {
+}): Promise<CreatedTrack> {
   const { userId: clerkId } = auth()
   if (!clerkId) throw new Error('Unauthorized')
 
@@ -52,14 +67,17 @@ export async function addTrack(params: {
     throw new Error('Forbidden')
   }
 
-  // Determine the next track position.
-  const [{ value: trackCount }] = await db
-    .select({ value: count() })
+  // Use MAX(position)+1 so deleted tracks don't collapse the sequence.
+  const [posRow] = await db
+    .select({ maxPos: max(tracks.position) })
     .from(tracks)
     .where(eq(tracks.projectId, params.projectId))
 
-  const position = (trackCount ?? 0) + 1
-  const trackName = params.filename.replace(/\.[^.]+$/, '') // strip extension
+  const position = (posRow?.maxPos ?? 0) + 1
+  const trackName = params.filename.replace(/\.[^.]+$/, '')
+
+  let trackId!: string
+  let audioFileId!: string
 
   await db.transaction(async (tx) => {
     const [track] = await tx
@@ -71,24 +89,46 @@ export async function addTrack(params: {
       })
       .returning({ id: tracks.id })
 
-    await tx.insert(audioFiles).values({
-      trackId: track.id,
-      uploadedBy: user.id,
-      r2Key: params.r2Key,
-      originalFilename: params.filename,
-      mimeType: params.mimeType,
-      sizeBytes: params.sizeBytes,
-    })
+    const [audioFile] = await tx
+      .insert(audioFiles)
+      .values({
+        trackId: track.id,
+        uploadedBy: user.id,
+        r2Key: params.r2Key,
+        originalFilename: params.filename,
+        mimeType: params.mimeType,
+        sizeBytes: params.sizeBytes,
+      })
+      .returning({ id: audioFiles.id })
+
+    trackId = track.id
+    audioFileId = audioFile.id
   })
 
+  // Activity recording is non-critical; a failure here must not lose the track.
   await recordActivity({
     projectId: params.projectId,
     actorUserId: user.id,
     type: 'track.uploaded',
     metadata: { trackName, filename: params.filename },
-  })
+  }).catch(() => {})
 
   revalidatePath(`/projects/${params.projectId}`)
+
+  return {
+    id: trackId,
+    name: trackName,
+    volume: 1.0,
+    isMuted: false,
+    isSoloed: false,
+    color: null,
+    audioFile: {
+      id: audioFileId,
+      originalFilename: params.filename,
+      sizeBytes: params.sizeBytes,
+      durationSeconds: null,
+    },
+  }
 }
 
 export async function removeTrack(params: { trackId: string; projectId: string }) {

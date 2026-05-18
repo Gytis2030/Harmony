@@ -178,7 +178,7 @@ export default function TrackRow({
     if (!canEditMix) return
 
     const timeout = window.setTimeout(() => {
-      void updateTrackMix({ trackId, volume: state.volume })
+      void updateTrackMix({ trackId, volume: state.volume }).catch(() => {})
     }, 300)
 
     return () => window.clearTimeout(timeout)
@@ -222,14 +222,14 @@ export default function TrackRow({
     const next = !state.muted
     dispatch({ type: 'toggle_mute' })
     audioEngine.setMuted(trackId, next)
-    if (canEditMix) void updateTrackMix({ trackId, isMuted: next })
+    if (canEditMix) void updateTrackMix({ trackId, isMuted: next }).catch(() => {})
   }
 
   function handleSoloToggle() {
     const next = !soloed
     audioEngine.setSoloed(trackId, next)
     onSoloChange(trackId)
-    if (canEditMix) void updateTrackMix({ trackId, isSoloed: next })
+    if (canEditMix) void updateTrackMix({ trackId, isSoloed: next }).catch(() => {})
   }
 
   function handleTimelineClick(e: React.MouseEvent<HTMLDivElement>) {

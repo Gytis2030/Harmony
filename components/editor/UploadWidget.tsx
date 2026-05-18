@@ -3,11 +3,13 @@
 import { useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { CheckCircle, Upload, XCircle } from 'lucide-react'
-import { addTrack } from '@/lib/actions/tracks'
+import { addTrack, type CreatedTrack } from '@/lib/actions/tracks'
 
 type FileStatus =
   | { status: 'pending' }
+  | { status: 'signing' }
   | { status: 'uploading'; progress: number }
+  | { status: 'saving' }
   | { status: 'done' }
   | { status: 'error'; message: string }
 
@@ -18,16 +20,20 @@ interface FileEntry {
 
 interface Props {
   projectId: string
+  onTrackCreated?: (track: CreatedTrack) => void
 }
 
 const ACCEPTED = 'audio/wav,audio/mpeg'
-const MAX_BYTES = 100 * 1024 * 1024 // 100 MB
+const MAX_BYTES = 100 * 1024 * 1024
+const CONCURRENCY = 3
 
 async function uploadOne(
   file: File,
   projectId: string,
-  onProgress: (p: number) => void
-): Promise<void> {
+  onStatus: (s: FileStatus) => void
+): Promise<CreatedTrack> {
+  onStatus({ status: 'signing' })
+
   const signRes = await fetch('/api/uploads/sign', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -46,12 +52,15 @@ async function uploadOne(
 
   const { url, r2Key } = (await signRes.json()) as { url: string; r2Key: string }
 
+  onStatus({ status: 'uploading', progress: 0 })
+
   await new Promise<void>((resolve, reject) => {
     const xhr = new XMLHttpRequest()
     xhr.open('PUT', url)
     xhr.setRequestHeader('Content-Type', file.type)
     xhr.upload.onprogress = (e) => {
-      if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100))
+      if (e.lengthComputable)
+        onStatus({ status: 'uploading', progress: Math.round((e.loaded / e.total) * 100) })
     }
     xhr.onload = () =>
       xhr.status >= 200 && xhr.status < 300
@@ -61,7 +70,9 @@ async function uploadOne(
     xhr.send(file)
   })
 
-  await addTrack({
+  onStatus({ status: 'saving' })
+
+  return addTrack({
     r2Key,
     filename: file.name,
     mimeType: file.type,
@@ -80,14 +91,18 @@ function validateFile(file: File): string | null {
   return null
 }
 
-export function UploadWidget({ projectId }: Props) {
+export function UploadWidget({ projectId, onTrackCreated }: Props) {
   const [entries, setEntries] = useState<FileEntry[]>([])
   const [isDragOver, setIsDragOver] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const router = useRouter()
 
   const isUploading = entries.some(
-    (e) => e.status.status === 'uploading' || e.status.status === 'pending'
+    (e) =>
+      e.status.status === 'uploading' ||
+      e.status.status === 'pending' ||
+      e.status.status === 'signing' ||
+      e.status.status === 'saving'
   )
   const allDone =
     entries.length > 0 &&
@@ -98,39 +113,41 @@ export function UploadWidget({ projectId }: Props) {
   }
 
   async function processFiles(files: File[]) {
-    const validated: { file: File; error: string | null }[] = files.map((f) => ({
-      file: f,
-      error: validateFile(f),
-    }))
-
+    const validated = files.map((f) => ({ file: f, error: validateFile(f) }))
     const initial: FileEntry[] = validated.map(({ file, error }) => ({
       file,
       status: error ? { status: 'error', message: error } : { status: 'pending' },
     }))
-
     setEntries(initial)
+
+    const pendingIndices = initial
+      .map((e, i) => (e.status.status === 'pending' ? i : -1))
+      .filter((i) => i >= 0)
 
     let anySuccess = false
 
-    for (let i = 0; i < initial.length; i++) {
-      if (initial[i].status.status === 'error') continue
-
-      updateEntry(i, { status: 'uploading', progress: 0 })
-
-      try {
-        await uploadOne(initial[i].file, projectId, (p) =>
-          updateEntry(i, { status: 'uploading', progress: p })
+    // Upload in batches to limit concurrency while still parallelizing.
+    for (let b = 0; b < pendingIndices.length; b += CONCURRENCY) {
+      const batch = pendingIndices.slice(b, b + CONCURRENCY)
+      await Promise.all(
+        batch.map((i) =>
+          uploadOne(initial[i].file, projectId, (s) => updateEntry(i, s))
+            .then((track) => {
+              updateEntry(i, { status: 'done' })
+              anySuccess = true
+              onTrackCreated?.(track)
+            })
+            .catch((err) => {
+              updateEntry(i, {
+                status: 'error',
+                message: err instanceof Error ? err.message : 'Upload failed.',
+              })
+            })
         )
-        updateEntry(i, { status: 'done' })
-        anySuccess = true
-      } catch (err) {
-        updateEntry(i, {
-          status: 'error',
-          message: err instanceof Error ? err.message : 'Upload failed.',
-        })
-      }
+      )
     }
 
+    // Backstop refresh to keep other tabs and sessions consistent.
     if (anySuccess) router.refresh()
   }
 
@@ -205,6 +222,21 @@ export function UploadWidget({ projectId }: Props) {
           <div className="min-w-0 flex-1 space-y-1.5">
             {entries.map((entry, i) => {
               const s = entry.status
+              const spinning =
+                s.status === 'pending' ||
+                s.status === 'signing' ||
+                s.status === 'uploading' ||
+                s.status === 'saving'
+
+              const label =
+                s.status === 'error'
+                  ? s.message
+                  : s.status === 'signing'
+                    ? `${entry.file.name} — authorising…`
+                    : s.status === 'saving'
+                      ? `${entry.file.name} — saving…`
+                      : entry.file.name
+
               return (
                 <div key={i} className="flex items-center gap-2 text-xs">
                   {s.status === 'done' && (
@@ -213,7 +245,7 @@ export function UploadWidget({ projectId }: Props) {
                   {s.status === 'error' && (
                     <XCircle className="h-3.5 w-3.5 shrink-0 text-red-400" />
                   )}
-                  {(s.status === 'pending' || s.status === 'uploading') && (
+                  {spinning && (
                     <div className="h-3.5 w-3.5 shrink-0 rounded-full border-2 border-violet-400 border-t-transparent animate-spin" />
                   )}
                   <div className="min-w-0 flex-1">
@@ -227,7 +259,7 @@ export function UploadWidget({ projectId }: Props) {
                             : 'text-slate-300',
                       ].join(' ')}
                     >
-                      {s.status === 'error' ? s.message : entry.file.name}
+                      {label}
                     </p>
                     {s.status === 'uploading' && (
                       <div className="mt-0.5 h-1 w-full overflow-hidden rounded-full bg-white/10">

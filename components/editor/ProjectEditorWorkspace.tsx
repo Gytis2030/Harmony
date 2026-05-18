@@ -17,6 +17,7 @@ import type { ShareLinkDto } from '@/lib/actions/share-links'
 import type { RestoredTrackMix, VersionDto } from '@/lib/actions/versions'
 import { fetchProjectVersions } from '@/lib/actions/versions'
 import { fetchProjectActivity } from '@/lib/actions/activity'
+import type { CreatedTrack } from '@/lib/actions/tracks'
 import { audioEngine } from '@/lib/audio/audio-engine'
 import { RoomProvider, useEventListener } from '@/lib/realtime/liveblocks'
 
@@ -210,6 +211,11 @@ function ProjectEditorInner({
     refreshActivity()
   }
 
+  function handleTrackCreated(track: CreatedTrack) {
+    setTracks((current) => [...current, track])
+    refreshActivity()
+  }
+
   function handleVersionCreated(version: VersionDto) {
     setVersions((current) => [version, ...current])
     refreshActivity()
@@ -272,6 +278,7 @@ function ProjectEditorInner({
           soloedTrackId={soloedTrackId}
           canUploadTracks={canUploadTracks}
           canEditMix={canUploadTracks}
+          onTrackCreated={canUploadTracks ? handleTrackCreated : undefined}
           onSoloChange={(trackId) =>
             setSoloedTrackId((current) => (current === trackId ? null : trackId))
           }

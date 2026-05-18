@@ -71,8 +71,8 @@ export default function MarketingHomePage() {
           </h1>
 
           <p className="mt-6 text-lg leading-relaxed text-slate-400 sm:text-xl">
-            Harmony gives producers a shared DAW in the browser. Upload stems, mix together, drop
-            comments on any millisecond — no plugins, no exports, no waiting.
+            Harmony is a collaborative stem-review workspace. Upload stems, collect timestamped
+            feedback, and track versions — no plugins, no exports, no waiting.
           </p>
 
           <div className="mt-10 flex flex-col items-center gap-3 sm:flex-row sm:justify-center">

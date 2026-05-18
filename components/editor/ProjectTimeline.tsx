@@ -8,6 +8,7 @@ import Playhead from '@/components/editor/Playhead'
 import TimelineMarkers from '@/components/editor/TimelineMarkers'
 import UploadWidget from '@/components/editor/UploadWidget'
 import type { CommentDto } from '@/lib/actions/comments'
+import type { CreatedTrack } from '@/lib/actions/tracks'
 
 type Track = {
   id: string
@@ -37,6 +38,7 @@ interface Props {
   canEditMix?: boolean
   onSoloChange: (trackId: string) => void
   onTrackRemoved?: (trackId: string) => void
+  onTrackCreated?: (track: CreatedTrack) => void
   onProjectCommentTarget: (timestampSeconds: number) => void
   onTrackCommentTarget: (trackId: string, trackName: string, timestampSeconds: number) => void
   onCommentSelect: (commentId: string | null) => void
@@ -73,6 +75,7 @@ export default function ProjectTimeline({
   canEditMix = false,
   onSoloChange,
   onTrackRemoved,
+  onTrackCreated,
   onProjectCommentTarget,
   onTrackCommentTarget,
   onCommentSelect,
@@ -219,7 +222,7 @@ export default function ProjectTimeline({
                 </span>
               </div>
               <div className="px-4 py-3">
-                <UploadWidget projectId={projectId} />
+                <UploadWidget projectId={projectId} onTrackCreated={onTrackCreated} />
               </div>
             </div>
           )}
