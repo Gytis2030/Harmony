@@ -1,7 +1,6 @@
 'use client'
 
 import { useRef, useState } from 'react'
-import { useRouter } from 'next/navigation'
 import { CheckCircle, Upload, XCircle } from 'lucide-react'
 import { addTrack, type CreatedTrack } from '@/lib/actions/tracks'
 
@@ -95,7 +94,6 @@ export function UploadWidget({ projectId, onTrackCreated }: Props) {
   const [entries, setEntries] = useState<FileEntry[]>([])
   const [isDragOver, setIsDragOver] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
-  const router = useRouter()
 
   const isUploading = entries.some(
     (e) =>
@@ -124,8 +122,6 @@ export function UploadWidget({ projectId, onTrackCreated }: Props) {
       .map((e, i) => (e.status.status === 'pending' ? i : -1))
       .filter((i) => i >= 0)
 
-    let anySuccess = false
-
     // Upload in batches to limit concurrency while still parallelizing.
     for (let b = 0; b < pendingIndices.length; b += CONCURRENCY) {
       const batch = pendingIndices.slice(b, b + CONCURRENCY)
@@ -134,7 +130,6 @@ export function UploadWidget({ projectId, onTrackCreated }: Props) {
           uploadOne(initial[i].file, projectId, (s) => updateEntry(i, s))
             .then((track) => {
               updateEntry(i, { status: 'done' })
-              anySuccess = true
               onTrackCreated?.(track)
             })
             .catch((err) => {
@@ -146,9 +141,6 @@ export function UploadWidget({ projectId, onTrackCreated }: Props) {
         )
       )
     }
-
-    // Backstop refresh to keep other tabs and sessions consistent.
-    if (anySuccess) router.refresh()
   }
 
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {

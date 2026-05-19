@@ -129,21 +129,32 @@ export default function TrackRow({
 
   useEffect(() => {
     async function load() {
-      try {
-        const res = await fetch(`/api/tracks/${trackId}/url`)
-        if (!res.ok) throw new Error(`Failed to get signed URL (${res.status})`)
-        const { url } = (await res.json()) as { url: string }
-        const buffer = await audioEngine.loadTrack(trackId, audioFileId, url)
-        if (mountedRef.current) {
-          dispatch({ type: 'load_success', payload: buffer })
-          onTrackLoaded(trackId, buffer.duration)
+      const MAX_RETRIES = 3
+      for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+        if (attempt > 0) {
+          await new Promise<void>((resolve) => setTimeout(resolve, 1000 * attempt))
+          if (!mountedRef.current) return
         }
-      } catch (err) {
-        if (mountedRef.current) {
-          dispatch({
-            type: 'load_error',
-            payload: err instanceof Error ? err.message : 'Load failed',
-          })
+        try {
+          const res = await fetch(`/api/tracks/${trackId}/url`)
+          // Retry on 404 — the DB row may not be visible to this connection yet.
+          if (res.status === 404 && attempt < MAX_RETRIES) continue
+          if (!res.ok) throw new Error(`Failed to get signed URL (${res.status})`)
+          const { url } = (await res.json()) as { url: string }
+          const buffer = await audioEngine.loadTrack(trackId, audioFileId, url)
+          if (mountedRef.current) {
+            dispatch({ type: 'load_success', payload: buffer })
+            onTrackLoaded(trackId, buffer.duration)
+          }
+          return
+        } catch (err) {
+          if (attempt < MAX_RETRIES) continue
+          if (mountedRef.current) {
+            dispatch({
+              type: 'load_error',
+              payload: err instanceof Error ? err.message : 'Load failed',
+            })
+          }
         }
       }
     }
