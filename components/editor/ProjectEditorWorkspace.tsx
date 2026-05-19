@@ -107,8 +107,22 @@ function ProjectEditorInner({
   const [target, setTarget] = useState<CommentTarget | null>(null)
   const [selectedCommentId, setSelectedCommentId] = useState<string | null>(null)
 
+  // Merge server state into local state rather than replacing it wholesale.
+  // Replacing would drop any optimistically-added tracks that aren't in this
+  // particular server snapshot yet (e.g. when updateTrackMix triggers a re-render
+  // while a batch upload is still in flight).
   useEffect(() => {
-    setTracks(initialTracks)
+    setTracks((current) => {
+      const currentIds = new Set(current.map((t) => t.id))
+      // Update existing tracks with server values (needed for version restore)
+      const updated = current.map((t) => {
+        const sv = initialTracks.find((st) => st.id === t.id)
+        return sv ?? t
+      })
+      // Add any server-side tracks not already in local state
+      const added = initialTracks.filter((st) => !currentIds.has(st.id))
+      return [...updated, ...added]
+    })
   }, [initialTracks])
 
   useEventListener(({ event }) => {
@@ -212,7 +226,11 @@ function ProjectEditorInner({
   }
 
   function handleTrackCreated(track: CreatedTrack) {
-    setTracks((current) => [...current, track])
+    setTracks((current) => {
+      // Guard against the merge effect and this callback both adding the same track
+      if (current.some((t) => t.id === track.id)) return current
+      return [...current, track]
+    })
     refreshActivity()
   }
 

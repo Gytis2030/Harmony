@@ -138,7 +138,7 @@ export default function TrackRow({
         try {
           const res = await fetch(`/api/tracks/${trackId}/url`)
           // Retry on 404 — the DB row may not be visible to this connection yet.
-          if (res.status === 404 && attempt < MAX_RETRIES) continue
+          if (!res.ok && attempt < MAX_RETRIES) continue
           if (!res.ok) throw new Error(`Failed to get signed URL (${res.status})`)
           const { url } = (await res.json()) as { url: string }
           const buffer = await audioEngine.loadTrack(trackId, audioFileId, url)

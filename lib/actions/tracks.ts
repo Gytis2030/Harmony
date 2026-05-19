@@ -1,7 +1,7 @@
 'use server'
 
 import { auth } from '@clerk/nextjs/server'
-import { and, eq, max, ne } from 'drizzle-orm'
+import { and, eq, max, ne, sql } from 'drizzle-orm'
 import { revalidatePath } from 'next/cache'
 import { db } from '@/lib/db'
 import { getUserByClerkId } from '@/lib/db/queries/users'
@@ -76,35 +76,29 @@ export async function addTrack(params: {
   const position = (posRow?.maxPos ?? 0) + 1
   const trackName = params.filename.replace(/\.[^.]+$/, '')
 
-  let trackId!: string
-  let audioFileId!: string
+  // Single-statement CTE — both inserts are atomic without BEGIN/COMMIT round-trips.
+  // Using db.transaction() with pgbouncer TRANSACTION mode sends 4 separate messages
+  // (BEGIN, INSERT, INSERT, COMMIT); pgbouncer can reassign the connection between them
+  // under load, silently rolling back the transaction while postgres.js resolves normally.
+  const rows = await db.execute(
+    sql`WITH new_track AS (
+      INSERT INTO tracks (project_id, name, position)
+      VALUES (${params.projectId}::uuid, ${trackName}, ${position})
+      RETURNING id
+    ), new_audio AS (
+      INSERT INTO audio_files (track_id, uploaded_by, r2_key, original_filename, mime_type, size_bytes)
+      SELECT id, ${user.id}::uuid, ${params.r2Key}, ${params.filename}, ${params.mimeType}, ${params.sizeBytes}::bigint
+      FROM new_track
+      RETURNING id
+    )
+    SELECT new_track.id AS track_id, new_audio.id AS audio_file_id
+    FROM new_track, new_audio`
+  )
 
-  await db.transaction(async (tx) => {
-    const [track] = await tx
-      .insert(tracks)
-      .values({
-        projectId: params.projectId,
-        name: trackName,
-        position,
-      })
-      .returning({ id: tracks.id })
-
-    const [audioFile] = await tx
-      .insert(audioFiles)
-      .values({
-        trackId: track.id,
-        uploadedBy: user.id,
-        r2Key: params.r2Key,
-        originalFilename: params.filename,
-        mimeType: params.mimeType,
-        sizeBytes: params.sizeBytes,
-      })
-      .returning({ id: audioFiles.id })
-
-    trackId = track.id
-    audioFileId = audioFile.id
-  })
-
+  const insertedRow = rows[0] as { track_id: string; audio_file_id: string } | undefined
+  if (!insertedRow) throw new Error('Track insert failed')
+  const trackId = insertedRow.track_id
+  const audioFileId = insertedRow.audio_file_id
   // Activity recording is non-critical; a failure here must not lose the track.
   await recordActivity({
     projectId: params.projectId,
@@ -113,7 +107,10 @@ export async function addTrack(params: {
     metadata: { trackName, filename: params.filename },
   }).catch(() => {})
 
-  revalidatePath(`/projects/${params.projectId}`)
+  // Intentionally no revalidatePath here — the caller updates UI optimistically via
+  // handleTrackCreated. Revalidating from inside a concurrent batch upload causes
+  // Next.js to re-render the RSC after each action, and the resulting snapshots race
+  // with one another, making newly-added tracks disappear.
 
   return {
     id: trackId,
