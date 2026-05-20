@@ -19,7 +19,7 @@ vi.mock('@/lib/db/queries/activity', () => ({
 vi.mock('@/lib/db', () => ({
   db: {
     select: vi.fn(),
-    transaction: vi.fn(),
+    execute: vi.fn(),
   },
 }))
 
@@ -46,24 +46,6 @@ function makeSelectChainNoLimit(result: unknown[]) {
   } as never
 }
 
-function makeTransactionMock() {
-  return vi.fn().mockImplementation(async (fn: (tx: unknown) => Promise<void>) => {
-    const tx = {
-      insert: vi.fn().mockReturnValue({
-        values: vi.fn().mockReturnValue({
-          returning: vi
-            .fn()
-            // First call: tracks insert → returns track row
-            .mockResolvedValueOnce([{ id: TRACK_ID }])
-            // Second call: audioFiles insert → returns audio file row
-            .mockResolvedValueOnce([{ id: AUDIO_FILE_ID }]),
-        }),
-      }),
-    }
-    await fn(tx)
-  })
-}
-
 const VALID_PARAMS = {
   r2Key: 'audio/proj-1/uuid-kick.wav',
   filename: 'kick.wav',
@@ -87,7 +69,10 @@ describe('addTrack server action', () => {
       // 3. MAX(position) query
       .mockReturnValueOnce(makeSelectChainNoLimit([{ maxPos: 2 }]))
 
-    vi.mocked(db.transaction).mockImplementation(makeTransactionMock())
+    // CTE insert returns one row with both IDs
+    vi.mocked(db.execute).mockResolvedValue([
+      { track_id: TRACK_ID, audio_file_id: AUDIO_FILE_ID },
+    ] as never)
   })
 
   it('returns the created track with correct shape', async () => {
@@ -111,8 +96,7 @@ describe('addTrack server action', () => {
 
   it('assigns position as MAX(position)+1', async () => {
     // MAX(position) = 2, so next position should be 3.
-    // We can't inspect the insert args directly without deeper mocking,
-    // but confirming the action completes without error is the goal here.
+    // Confirming the action completes without error is the goal here.
     await expect(addTrack(VALID_PARAMS)).resolves.toMatchObject({ id: TRACK_ID })
   })
 
@@ -122,8 +106,6 @@ describe('addTrack server action', () => {
       .mockReturnValueOnce(makeSelectChain([{ workspaceId: 'ws-1' }]))
       .mockReturnValueOnce(makeSelectChain([{ role: 'owner' }]))
       .mockReturnValueOnce(makeSelectChainNoLimit([{ maxPos: null }]))
-
-    vi.mocked(db.transaction).mockImplementation(makeTransactionMock())
 
     await expect(addTrack(VALID_PARAMS)).resolves.toMatchObject({ id: TRACK_ID })
   })
@@ -135,7 +117,7 @@ describe('addTrack server action', () => {
       .mockReturnValueOnce(makeSelectChain([{ role: 'commenter' }]))
 
     await expect(addTrack(VALID_PARAMS)).rejects.toThrow('Forbidden')
-    expect(vi.mocked(db.transaction)).not.toHaveBeenCalled()
+    expect(vi.mocked(db.execute)).not.toHaveBeenCalled()
   })
 
   it('throws Forbidden for viewer role', async () => {
@@ -145,7 +127,7 @@ describe('addTrack server action', () => {
       .mockReturnValueOnce(makeSelectChain([{ role: 'viewer' }]))
 
     await expect(addTrack(VALID_PARAMS)).rejects.toThrow('Forbidden')
-    expect(vi.mocked(db.transaction)).not.toHaveBeenCalled()
+    expect(vi.mocked(db.execute)).not.toHaveBeenCalled()
   })
 
   it('throws Unauthorized when not logged in', async () => {

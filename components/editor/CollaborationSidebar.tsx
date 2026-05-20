@@ -77,6 +77,7 @@ interface Props {
   currentUserRole: WorkspaceMemberRole
   canComment: boolean
   canManageComments: boolean
+  isWorkspaceMember: boolean
   onStartCommentMode: () => void
   onCancelComment: () => void
   onTargetChange: (target: CommentTarget) => void
@@ -157,6 +158,7 @@ export default function CollaborationSidebar({
   currentUserRole,
   canComment,
   canManageComments,
+  isWorkspaceMember,
   onStartCommentMode,
   onCancelComment,
   onTargetChange,
@@ -816,42 +818,57 @@ export default function CollaborationSidebar({
 
           {/* ── people tab content ── */}
           {activeTab === 'people' && (
-            <PeopleTab
-              members={members}
-              invites={invites}
-              shareLinks={shareLinks}
-              currentUserId={currentUserId}
-              currentUserRole={currentUserRole}
-              canInvite={canInvite}
-              canManageLinks={canManageLinks}
-              invitableRoles={invitableRoles}
-              inviteEmail={inviteEmail}
-              inviteRole={inviteRole}
-              inviteError={inviteError}
-              shareLinkError={shareLinkError}
-              memberActionError={memberActionError}
-              newInviteToken={newInviteToken}
-              copiedToken={copiedToken}
-              newShareTokens={newShareTokens}
-              copiedShareLinkId={copiedShareLinkId}
-              isInvitePending={isInvitePending}
-              isRevokePending={isRevokePending}
-              isShareLinkPending={isShareLinkPending}
-              isShareRevokePending={isShareRevokePending}
-              isMemberActionPending={isMemberActionPending}
-              onEmailChange={setInviteEmail}
-              onRoleChange={setInviteRole}
-              onSubmit={handleInviteSubmit}
-              onCopy={handleCopyLink}
-              onRevoke={handleRevoke}
-              onDismissNewLink={() => setNewInviteToken(null)}
-              onRemoveMember={handleRemoveMember}
-              onUpdateMemberRole={handleUpdateMemberRole}
-              onCreateShareLink={handleCreateShareLink}
-              onRevokeShareLink={handleRevokeShareLink}
-              onCopyShareLink={handleCopyShareLink}
-              onDismissShareToken={handleDismissShareToken}
-            />
+            <>
+              {!isWorkspaceMember ? (
+                <div className="rounded border border-white/10 bg-white/[0.025] p-4 text-center">
+                  <p className="text-sm text-slate-400">
+                    {canComment
+                      ? 'You have comment access to this project.'
+                      : 'You have view-only access to this project.'}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-600">
+                    Ask the project owner to invite you to the workspace for full access.
+                  </p>
+                </div>
+              ) : (
+                <PeopleTab
+                  members={members}
+                  invites={invites}
+                  shareLinks={shareLinks}
+                  currentUserId={currentUserId}
+                  currentUserRole={currentUserRole}
+                  canInvite={canInvite}
+                  canManageLinks={canManageLinks}
+                  invitableRoles={invitableRoles}
+                  inviteEmail={inviteEmail}
+                  inviteRole={inviteRole}
+                  inviteError={inviteError}
+                  shareLinkError={shareLinkError}
+                  memberActionError={memberActionError}
+                  newInviteToken={newInviteToken}
+                  copiedToken={copiedToken}
+                  newShareTokens={newShareTokens}
+                  copiedShareLinkId={copiedShareLinkId}
+                  isInvitePending={isInvitePending}
+                  isRevokePending={isRevokePending}
+                  isShareLinkPending={isShareLinkPending}
+                  isShareRevokePending={isShareRevokePending}
+                  isMemberActionPending={isMemberActionPending}
+                  onEmailChange={setInviteEmail}
+                  onRoleChange={setInviteRole}
+                  onSubmit={handleInviteSubmit}
+                  onCopy={handleCopyLink}
+                  onRevoke={handleRevoke}
+                  onDismissNewLink={() => setNewInviteToken(null)}
+                  onRemoveMember={handleRemoveMember}
+                  onUpdateMemberRole={handleUpdateMemberRole}
+                  onCreateShareLink={handleCreateShareLink}
+                  onRevokeShareLink={handleRevokeShareLink}
+                  onCopyShareLink={handleCopyShareLink}
+                  onDismissShareToken={handleDismissShareToken}
+                />
+              )}
+            </>
           )}
 
           {/* ── versions tab content ── */}
@@ -929,7 +946,16 @@ export default function CollaborationSidebar({
               )}
 
               {/* version list / detail */}
-              {selectedVersionId ? (
+              {!isWorkspaceMember && versions.length === 0 ? (
+                <div className="rounded border border-white/10 bg-white/[0.025] p-4 text-center">
+                  <p className="text-sm text-slate-400">
+                    Versions are managed by the project owner.
+                  </p>
+                  <p className="mt-1 text-xs text-slate-600">
+                    Ask an editor or owner to save a version snapshot.
+                  </p>
+                </div>
+              ) : selectedVersionId ? (
                 <VersionDetail
                   version={versions.find((v) => v.id === selectedVersionId)!}
                   restoreConfirm={restoreConfirm}
@@ -1681,9 +1707,13 @@ function PeopleTab({
       {/* Invite form — owner/editor only */}
       {canInvite && (
         <div className="border-t border-white/[0.06] pt-4">
-          <p className="mb-2.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+          <p className="mb-1 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
             <UserPlus className="h-3 w-3" />
-            Invite someone
+            Invite to workspace
+          </p>
+          <p className="mb-2.5 text-[10px] text-slate-600">
+            Editor invites get full workspace access. Viewer &amp; Commenter invites get access to
+            this project only.
           </p>
           <form onSubmit={onSubmit} className="space-y-2">
             <input
@@ -1802,9 +1832,12 @@ function PeopleTab({
       {/* Share links — owner/editor only */}
       {canManageLinks && (
         <div className="border-t border-white/[0.06] pt-4">
-          <p className="mb-2.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+          <p className="mb-1 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
             <LinkIcon className="h-3 w-3" />
-            Share links
+            Share this project
+          </p>
+          <p className="mb-2.5 text-[10px] text-slate-600">
+            Anyone with the link must sign in. They get access to this project only.
           </p>
 
           {shareLinkError && <p className="mb-2 text-xs text-red-300">{shareLinkError}</p>}

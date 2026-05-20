@@ -102,6 +102,20 @@ export default async function AcceptInvitePage({ params, searchParams }: Props) 
   const inviterName = invite.inviterName ?? invite.inviterEmail
   const roleName = ROLE_LABELS[invite.role] ?? invite.role
 
+  // Fetch project name for project-scoped invites so the copy is accurate
+  let projectName: string | null = null
+  if (isProjectScoped && projectId) {
+    const { projects } = await import('@/lib/db/schema')
+    const { eq } = await import('drizzle-orm')
+    const { db } = await import('@/lib/db')
+    const [projectRow] = await db
+      .select({ name: projects.name })
+      .from(projects)
+      .where(eq(projects.id, projectId))
+      .limit(1)
+    projectName = projectRow?.name ?? null
+  }
+
   async function accept() {
     'use server'
     await acceptInvite(params.token, destination)
@@ -116,14 +130,31 @@ export default async function AcceptInvitePage({ params, searchParams }: Props) 
         </p>
 
         <h1 className="text-center text-xl font-bold text-white">You&apos;ve been invited</h1>
-        <p className="mt-2 text-center text-sm text-slate-400">
-          <span className="font-medium text-slate-200">{inviterName}</span> has invited you to join{' '}
-          <span className="font-medium text-slate-200">{workspaceName}</span> as a{' '}
-          <span className="inline-flex items-center rounded bg-violet-500/20 px-1.5 py-0.5 text-xs font-semibold text-violet-200">
-            {roleName}
-          </span>
-          .
-        </p>
+        {isProjectScoped && projectName ? (
+          <p className="mt-2 text-center text-sm text-slate-400">
+            <span className="font-medium text-slate-200">{inviterName}</span> has invited you to
+            collaborate on <span className="font-medium text-slate-200">{projectName}</span> as a{' '}
+            <span className="inline-flex items-center rounded bg-violet-500/20 px-1.5 py-0.5 text-xs font-semibold text-violet-200">
+              {roleName}
+            </span>
+            .{' '}
+            <span className="text-slate-500">
+              You&apos;ll only have access to this project, not the full workspace.
+            </span>
+          </p>
+        ) : (
+          <p className="mt-2 text-center text-sm text-slate-400">
+            <span className="font-medium text-slate-200">{inviterName}</span> has invited you to
+            join <span className="font-medium text-slate-200">{workspaceName}</span> as a{' '}
+            <span className="inline-flex items-center rounded bg-violet-500/20 px-1.5 py-0.5 text-xs font-semibold text-violet-200">
+              {roleName}
+            </span>
+            .{' '}
+            <span className="text-slate-500">
+              You&apos;ll have access to all projects in this workspace.
+            </span>
+          </p>
+        )}
 
         <div className="mt-6 rounded-lg border border-white/10 bg-white/[0.03] p-4 text-sm text-slate-400">
           <p>
@@ -138,7 +169,7 @@ export default async function AcceptInvitePage({ params, searchParams }: Props) 
             type="submit"
             className="w-full rounded-lg bg-[#7c3aed] py-3 text-sm font-semibold text-white transition hover:bg-[#8b5cf6]"
           >
-            Accept invite &amp; join workspace
+            {isProjectScoped ? 'Accept invite & open project' : 'Accept invite & join workspace'}
           </button>
         </form>
 

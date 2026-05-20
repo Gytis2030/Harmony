@@ -89,6 +89,7 @@ function ProjectEditorInner({
   canComment,
   canManageComments,
   canUploadTracks,
+  isWorkspaceMember,
   bpm,
   timeSignature,
 }: Props) {
@@ -328,6 +329,7 @@ function ProjectEditorInner({
           currentUserRole={currentUserRole}
           canComment={canComment}
           canManageComments={canManageComments}
+          isWorkspaceMember={isWorkspaceMember}
           onStartCommentMode={() => {
             setCommentMode(true)
             setTarget(null)
