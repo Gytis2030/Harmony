@@ -5,6 +5,8 @@ import {
   getProjectByIdWithShareGrant,
   getShareGrantForUser,
   getActiveShareLinksForProject,
+  getProjectShareGrantUsers,
+  getLinkReviewerIds,
 } from '@/lib/db/queries/projects'
 import { getTracksForProject } from '@/lib/db/queries/tracks'
 import { getCommentsForProject } from '@/lib/db/queries/comments'
@@ -12,7 +14,9 @@ import { getWorkspaceMembers, getWorkspacePendingInvites } from '@/lib/db/querie
 import { getRecentActivity } from '@/lib/db/queries/activity'
 import { listVersions } from '@/lib/actions/versions'
 import type { ShareLinkDto } from '@/lib/actions/share-links'
+import type { ShareGrantDto } from '@/lib/actions/share-grants'
 import type { ActivityDto } from '@/lib/db/queries/activity'
+import { getReviewerAlias } from '@/lib/reviewer-alias'
 import ProjectEditorWorkspace from '@/components/editor/ProjectEditorWorkspace'
 
 interface Props {
@@ -59,6 +63,31 @@ export default async function ProjectEditorPage({ params }: Props) {
     createdAt: string
   }[] = []
   let shareLinkDtos: ShareLinkDto[] = []
+  let shareGrantDtos: ShareGrantDto[] = []
+
+  // Helper: substitute link-reviewer aliases in an activity row array.
+  async function applyAliasesToActivity(
+    rows: Awaited<ReturnType<typeof getRecentActivity>>
+  ): Promise<ActivityDto[]> {
+    const actorIds = [
+      ...new Set(rows.map((r) => r.actorUserId).filter((id): id is string => id !== null)),
+    ]
+    const reviewerIds = new Set(await getLinkReviewerIds(params.id, actorIds))
+    return rows.map((r) => ({
+      id: r.id,
+      projectId: r.projectId,
+      actorUserId: r.actorUserId,
+      actorName:
+        r.actorUserId && reviewerIds.has(r.actorUserId)
+          ? getReviewerAlias(params.id, r.actorUserId)
+          : (r.actorName ?? r.actorEmail ?? null),
+      type: r.type,
+      targetType: r.targetType,
+      targetId: r.targetId,
+      metadata: r.metadata as Record<string, unknown> | null,
+      createdAt: r.createdAt.toISOString(),
+    }))
+  }
 
   if (memberRecord) {
     isWorkspaceMember = true
@@ -67,24 +96,15 @@ export default async function ProjectEditorPage({ params }: Props) {
     canManageComments = currentUserRole === 'owner' || currentUserRole === 'editor'
     canUploadTracks = currentUserRole === 'owner' || currentUserRole === 'editor'
 
-    const [invites, shareLinks, versionList, activityRows] = await Promise.all([
+    const [invites, shareLinks, shareGrantUsers, versionList, activityRows] = await Promise.all([
       getWorkspacePendingInvites(project.workspaceId),
       getActiveShareLinksForProject(params.id),
+      getProjectShareGrantUsers(params.id),
       listVersions(params.id),
       getRecentActivity(params.id).catch(() => []),
     ])
     versions = versionList
-    activityDtos = activityRows.map((r) => ({
-      id: r.id,
-      projectId: r.projectId,
-      actorUserId: r.actorUserId,
-      actorName: r.actorName ?? r.actorEmail ?? null,
-      type: r.type,
-      targetType: r.targetType,
-      targetId: r.targetId,
-      metadata: r.metadata as Record<string, unknown> | null,
-      createdAt: r.createdAt.toISOString(),
-    }))
+    activityDtos = await applyAliasesToActivity(activityRows)
 
     memberDtos = allMembers.map((m) => ({
       userId: m.userId,
@@ -111,6 +131,19 @@ export default async function ProjectEditorPage({ params }: Props) {
       isActive: l.isActive,
       createdAt: l.createdAt.toISOString(),
     }))
+
+    shareGrantDtos = shareGrantUsers.map((g) => {
+      const isLinkReviewer = g.shareLinkId !== null
+      return {
+        userId: g.userId,
+        displayName: g.displayName ?? null,
+        email: g.email,
+        accessLevel: g.accessLevel,
+        grantedAt: g.grantedAt.toISOString(),
+        isLinkReviewer,
+        alias: isLinkReviewer ? getReviewerAlias(params.id, g.userId) : null,
+      }
+    })
   } else {
     const grant = await getShareGrantForUser(params.id, user.id)
     if (!grant) notFound()
@@ -131,19 +164,8 @@ export default async function ProjectEditorPage({ params }: Props) {
       'version.restored',
     ])
     const activityRows = await getRecentActivity(params.id).catch(() => [])
-    activityDtos = activityRows
-      .filter((r) => SHARE_GRANT_ACTIVITY_TYPES.has(r.type))
-      .map((r) => ({
-        id: r.id,
-        projectId: r.projectId,
-        actorUserId: r.actorUserId,
-        actorName: r.actorName ?? r.actorEmail ?? null,
-        type: r.type,
-        targetType: r.targetType,
-        targetId: r.targetId,
-        metadata: r.metadata as Record<string, unknown> | null,
-        createdAt: r.createdAt.toISOString(),
-      }))
+    const filtered = activityRows.filter((r) => SHARE_GRANT_ACTIVITY_TYPES.has(r.type))
+    activityDtos = await applyAliasesToActivity(filtered)
   }
 
   const comments = await getCommentsForProject(params.id, user.id)
@@ -172,6 +194,7 @@ export default async function ProjectEditorPage({ params }: Props) {
         members={memberDtos}
         invites={inviteDtos}
         shareLinks={shareLinkDtos}
+        shareGrants={shareGrantDtos}
         activity={activityDtos}
         currentUserRole={currentUserRole}
         canComment={canComment}

@@ -12,8 +12,19 @@ const projectsChain = vi.hoisted(() => ({
       bpm: null,
       createdAt: new Date('2026-01-01'),
       updatedAt: new Date('2026-01-01'),
+      ownerId: 'user-uuid',
+      role: 'owner',
+      ownerDisplayName: 'Test User',
+      ownerEmail: 'test@example.com',
     },
   ]),
+}))
+
+// Share-grant query returns empty (no project-scoped grants for this user)
+const grantChain = vi.hoisted(() => ({
+  from: vi.fn().mockReturnThis(),
+  innerJoin: vi.fn().mockReturnThis(),
+  where: vi.fn().mockResolvedValue([]),
 }))
 
 const stemChain = vi.hoisted(() => ({
@@ -30,7 +41,9 @@ vi.mock('@/lib/db', () => ({
   db: {
     select: vi.fn(() => {
       selectCallCount++
-      return selectCallCount === 1 ? projectsChain : stemChain
+      if (selectCallCount === 1) return projectsChain
+      if (selectCallCount === 2) return grantChain
+      return stemChain
     }),
   },
 }))
@@ -44,7 +57,9 @@ describe('getProjectsForUser', () => {
     vi.clearAllMocks()
     vi.mocked(db.select).mockImplementation(() => {
       selectCallCount++
-      return (selectCallCount === 1 ? projectsChain : stemChain) as never
+      if (selectCallCount === 1) return projectsChain as never
+      if (selectCallCount === 2) return grantChain as never
+      return stemChain as never
     })
   })
 
@@ -55,11 +70,13 @@ describe('getProjectsForUser', () => {
     expect(result[0]).toMatchObject({ id: 'proj-1', name: 'Test Project', stemCount: 3 })
   })
 
-  it('makes two db.select calls — projects then stem counts', async () => {
+  it('makes three db.select calls — workspace projects, share grants, then stem counts', async () => {
     await getProjectsForUser('user-uuid')
-    expect(vi.mocked(db.select)).toHaveBeenCalledTimes(2)
-    expect(projectsChain.innerJoin).toHaveBeenCalledTimes(2)
+    expect(vi.mocked(db.select)).toHaveBeenCalledTimes(3)
+    expect(projectsChain.innerJoin).toHaveBeenCalledTimes(3)
     expect(projectsChain.where).toHaveBeenCalledOnce()
+    expect(grantChain.innerJoin).toHaveBeenCalledTimes(3)
+    expect(grantChain.where).toHaveBeenCalledOnce()
     expect(stemChain.innerJoin).toHaveBeenCalledOnce()
     expect(stemChain.groupBy).toHaveBeenCalledOnce()
   })

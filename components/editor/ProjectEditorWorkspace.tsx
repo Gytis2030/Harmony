@@ -3,17 +3,19 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, Circle } from 'lucide-react'
+import { Activity, ArrowLeft, Circle, Users } from 'lucide-react'
 import ProjectTimeline from '@/components/editor/ProjectTimeline'
 import CollaborationSidebar, {
   type CommentTarget,
   type ActivityDto,
+  type SidebarTab,
 } from '@/components/editor/CollaborationSidebar'
 import PresenceAvatars from '@/components/editor/PresenceAvatars'
 import type { CommentDto, CommentReplyDto } from '@/lib/actions/comments'
 import { fetchProjectComments } from '@/lib/actions/comments'
 import type { InviteDto } from '@/lib/actions/invites'
 import type { ShareLinkDto } from '@/lib/actions/share-links'
+import type { ShareGrantDto } from '@/lib/actions/share-grants'
 import type { RestoredTrackMix, VersionDto } from '@/lib/actions/versions'
 import { fetchProjectVersions } from '@/lib/actions/versions'
 import { fetchProjectActivity } from '@/lib/actions/activity'
@@ -55,6 +57,7 @@ interface Props {
   members: MemberDto[]
   invites: InviteDto[]
   shareLinks: ShareLinkDto[]
+  shareGrants: ShareGrantDto[]
   activity: ActivityDto[]
   currentUserRole: 'owner' | 'editor' | 'commenter' | 'viewer'
   canComment: boolean
@@ -84,6 +87,7 @@ function ProjectEditorInner({
   members: initialMembers,
   invites: initialInvites,
   shareLinks: initialShareLinks,
+  shareGrants: initialShareGrants,
   activity: initialActivity,
   currentUserRole,
   canComment,
@@ -94,11 +98,13 @@ function ProjectEditorInner({
   timeSignature,
 }: Props) {
   const router = useRouter()
+  const [tabRequest, setTabRequest] = useState<{ tab: SidebarTab; seq: number } | null>(null)
   const [comments, setComments] = useState(initialComments)
   const [versions, setVersions] = useState(initialVersions)
   const [members, setMembers] = useState(initialMembers)
   const [invites, setInvites] = useState(initialInvites)
   const [shareLinks, setShareLinks] = useState(initialShareLinks)
+  const [shareGrants, setShareGrants] = useState(initialShareGrants)
   const [activity, setActivity] = useState(initialActivity)
   const [tracks, setTracks] = useState(initialTracks)
   const [soloedTrackId, setSoloedTrackId] = useState<string | null>(
@@ -282,7 +288,31 @@ function ProjectEditorInner({
           </div>
         </div>
 
-        <PresenceAvatars />
+        <div className="flex shrink-0 items-center gap-2">
+          {(currentUserRole === 'owner' || currentUserRole === 'editor') && (
+            <button
+              type="button"
+              onClick={() =>
+                setTabRequest((prev) => ({ tab: 'people', seq: (prev?.seq ?? 0) + 1 }))
+              }
+              className="inline-flex h-9 items-center gap-1.5 rounded-md border border-violet-500/40 bg-violet-500/10 px-3 text-sm font-semibold text-violet-300 transition hover:bg-violet-500/20 hover:text-violet-100"
+            >
+              <Users className="h-3.5 w-3.5" />
+              Share
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() =>
+              setTabRequest((prev) => ({ tab: 'activity', seq: (prev?.seq ?? 0) + 1 }))
+            }
+            className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-white/10 text-slate-400 transition hover:border-white/20 hover:bg-white/5 hover:text-white"
+            aria-label="View activity"
+          >
+            <Activity className="h-4 w-4" />
+          </button>
+          <PresenceAvatars />
+        </div>
       </header>
 
       <div className="grid min-h-[calc(100vh-4rem)] grid-cols-1 xl:grid-cols-[minmax(0,1fr)_300px]">
@@ -325,6 +355,7 @@ function ProjectEditorInner({
           members={members}
           invites={invites}
           shareLinks={shareLinks}
+          shareGrants={shareGrants}
           activity={activity}
           currentUserRole={currentUserRole}
           canComment={canComment}
@@ -367,6 +398,16 @@ function ProjectEditorInner({
             refreshActivity()
           }}
           onShareLinkRevoked={(id) => setShareLinks((cur) => cur.filter((l) => l.id !== id))}
+          onShareGrantCreated={(grant) =>
+            setShareGrants((cur) => {
+              const filtered = cur.filter((g) => g.userId !== grant.userId)
+              return [...filtered, grant]
+            })
+          }
+          onShareGrantRevoked={(userId) =>
+            setShareGrants((cur) => cur.filter((g) => g.userId !== userId))
+          }
+          tabRequest={tabRequest}
         />
       </div>
     </>

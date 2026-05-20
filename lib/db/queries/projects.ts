@@ -1,13 +1,17 @@
-import { and, count, eq, isNull } from 'drizzle-orm'
+import { and, count, eq, inArray, isNotNull, isNull } from 'drizzle-orm'
+import { alias } from 'drizzle-orm/pg-core'
 import { db } from '../index'
 import {
   projects,
   tracks,
+  users,
   workspaces,
   workspaceMembers,
   projectShareGrants,
   projectShareLinks,
 } from '../schema'
+
+const ownerUser = alias(users, 'owner_user')
 
 export async function getProjectById(projectId: string, userId: string) {
   const result = await db
@@ -110,7 +114,8 @@ export async function getShareLinkByTokenHash(tokenHash: string) {
 }
 
 export async function getProjectsForUser(userId: string) {
-  const rows = await db
+  // Query 1: projects accessible via workspace membership
+  const wsRows = await db
     .select({
       id: projects.id,
       name: projects.name,
@@ -118,16 +123,80 @@ export async function getProjectsForUser(userId: string) {
       bpm: projects.bpm,
       createdAt: projects.createdAt,
       updatedAt: projects.updatedAt,
-      isOwned: workspaces.ownerId,
+      ownerId: workspaces.ownerId,
+      role: workspaceMembers.role,
+      ownerDisplayName: ownerUser.displayName,
+      ownerEmail: ownerUser.email,
     })
     .from(projects)
     .innerJoin(workspaces, eq(projects.workspaceId, workspaces.id))
     .innerJoin(workspaceMembers, eq(workspaceMembers.workspaceId, workspaces.id))
+    .innerJoin(ownerUser, eq(ownerUser.id, workspaces.ownerId))
     .where(and(eq(workspaceMembers.userId, userId), isNull(projects.deletedAt)))
 
-  if (rows.length === 0) return []
+  // Query 2: projects accessible via direct share grant (project-specific only)
+  const grantRows = await db
+    .select({
+      id: projects.id,
+      name: projects.name,
+      workspaceId: projects.workspaceId,
+      bpm: projects.bpm,
+      createdAt: projects.createdAt,
+      updatedAt: projects.updatedAt,
+      ownerId: workspaces.ownerId,
+      accessLevel: projectShareGrants.accessLevel,
+      ownerDisplayName: ownerUser.displayName,
+      ownerEmail: ownerUser.email,
+    })
+    .from(projectShareGrants)
+    .innerJoin(projects, eq(projects.id, projectShareGrants.projectId))
+    .innerJoin(workspaces, eq(workspaces.id, projects.workspaceId))
+    .innerJoin(ownerUser, eq(ownerUser.id, workspaces.ownerId))
+    .where(and(eq(projectShareGrants.userId, userId), isNull(projects.deletedAt)))
 
-  const projectIds = rows.map((r) => r.id)
+  // Deduplicate: workspace membership takes priority over share grants
+  const wsProjectIds = new Set(wsRows.map((r) => r.id))
+
+  const normalized: Array<{
+    id: string
+    name: string
+    workspaceId: string
+    bpm: number | null
+    createdAt: Date
+    updatedAt: Date
+    isOwned: boolean
+    role: string
+    ownerName: string | null
+  }> = [
+    ...wsRows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      workspaceId: r.workspaceId,
+      bpm: r.bpm,
+      createdAt: r.createdAt,
+      updatedAt: r.updatedAt,
+      isOwned: r.ownerId === userId,
+      role: r.role as string,
+      ownerName: r.ownerDisplayName ?? r.ownerEmail ?? null,
+    })),
+    ...grantRows
+      .filter((r) => !wsProjectIds.has(r.id))
+      .map((r) => ({
+        id: r.id,
+        name: r.name,
+        workspaceId: r.workspaceId,
+        bpm: r.bpm,
+        createdAt: r.createdAt,
+        updatedAt: r.updatedAt,
+        isOwned: false,
+        role: r.accessLevel === 'comment' ? 'commenter' : 'viewer',
+        ownerName: r.ownerDisplayName ?? r.ownerEmail ?? null,
+      })),
+  ]
+
+  if (normalized.length === 0) return []
+
+  const projectIds = normalized.map((r) => r.id)
 
   const stemCounts = await db
     .select({ projectId: tracks.projectId, stemCount: count(tracks.id) })
@@ -142,14 +211,39 @@ export async function getProjectsForUser(userId: string) {
       .map((c) => [c.projectId, c.stemCount])
   )
 
-  return rows.map((row) => ({
-    id: row.id,
-    name: row.name,
-    workspaceId: row.workspaceId,
-    bpm: row.bpm,
-    createdAt: row.createdAt,
-    updatedAt: row.updatedAt,
+  return normalized.map((row) => ({
+    ...row,
     stemCount: countMap.get(row.id) ?? 0,
-    isOwned: row.isOwned === userId,
   }))
+}
+
+export async function getProjectShareGrantUsers(projectId: string) {
+  return db
+    .select({
+      userId: projectShareGrants.userId,
+      displayName: users.displayName,
+      email: users.email,
+      accessLevel: projectShareGrants.accessLevel,
+      shareLinkId: projectShareGrants.shareLinkId,
+      grantedAt: projectShareGrants.grantedAt,
+    })
+    .from(projectShareGrants)
+    .innerJoin(users, eq(users.id, projectShareGrants.userId))
+    .where(eq(projectShareGrants.projectId, projectId))
+}
+
+// Returns the subset of userIds that have a link-reviewer grant (shareLinkId IS NOT NULL) for the project.
+export async function getLinkReviewerIds(projectId: string, userIds: string[]): Promise<string[]> {
+  if (userIds.length === 0) return []
+  const rows = await db
+    .select({ userId: projectShareGrants.userId })
+    .from(projectShareGrants)
+    .where(
+      and(
+        eq(projectShareGrants.projectId, projectId),
+        inArray(projectShareGrants.userId, userIds),
+        isNotNull(projectShareGrants.shareLinkId)
+      )
+    )
+  return rows.map((r) => r.userId)
 }

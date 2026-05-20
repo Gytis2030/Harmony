@@ -1,4 +1,4 @@
-import { desc, eq } from 'drizzle-orm'
+import { desc, eq, inArray } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { projectActivity, users } from '@/lib/db/schema'
 
@@ -12,6 +12,8 @@ export type ActivityType =
   | 'version.restored'
   | 'share_link.created'
   | 'share_link.accessed'
+  | 'share_grant.created'
+  | 'share_grant.revoked'
 
 export async function recordActivity(params: {
   projectId: string
@@ -87,6 +89,31 @@ export async function getRecentActivity(projectId: string, limit = 50): Promise<
     .from(projectActivity)
     .leftJoin(users, eq(users.id, projectActivity.actorUserId))
     .where(eq(projectActivity.projectId, projectId))
+    .orderBy(desc(projectActivity.createdAt))
+    .limit(limit)
+}
+
+export async function getDashboardActivity(
+  projectIds: string[],
+  limit = 10
+): Promise<ActivityRow[]> {
+  if (projectIds.length === 0) return []
+  return db
+    .select({
+      id: projectActivity.id,
+      projectId: projectActivity.projectId,
+      actorUserId: projectActivity.actorUserId,
+      actorName: users.displayName,
+      actorEmail: users.email,
+      type: projectActivity.type,
+      targetType: projectActivity.targetType,
+      targetId: projectActivity.targetId,
+      metadata: projectActivity.metadata,
+      createdAt: projectActivity.createdAt,
+    })
+    .from(projectActivity)
+    .leftJoin(users, eq(users.id, projectActivity.actorUserId))
+    .where(inArray(projectActivity.projectId, projectIds))
     .orderBy(desc(projectActivity.createdAt))
     .limit(limit)
 }

@@ -7,6 +7,15 @@ export async function getUserByClerkId(clerkId: string) {
   return result[0] ?? null
 }
 
+export async function getUserByEmail(email: string) {
+  const [row] = await db
+    .select()
+    .from(users)
+    .where(eq(users.email, email.trim().toLowerCase()))
+    .limit(1)
+  return row ?? null
+}
+
 // Called when a valid Clerk session exists but the webhook hasn't fired yet
 // (common in dev without a tunnel). Creates user + personal workspace atomically.
 export async function provisionUser(params: {

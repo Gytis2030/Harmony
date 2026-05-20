@@ -1,7 +1,11 @@
 import { auth } from '@clerk/nextjs/server'
+import { and, eq, isNotNull } from 'drizzle-orm'
 import { Liveblocks } from '@liveblocks/node'
+import { db } from '@/lib/db'
 import { getUserByClerkId } from '@/lib/db/queries/users'
 import { getProjectByIdWithShareGrant } from '@/lib/db/queries/projects'
+import { projectShareGrants } from '@/lib/db/schema'
+import { getReviewerAlias } from '@/lib/reviewer-alias'
 
 const liveblocks = new Liveblocks({
   secret: process.env.LIVEBLOCKS_SECRET_KEY!,
@@ -41,10 +45,27 @@ export async function POST(req: Request) {
   const project = await getProjectByIdWithShareGrant(projectId, user.id)
   if (!project) return new Response('Forbidden', { status: 403 })
 
+  // Determine the display name — link reviewers get a deterministic anonymous alias.
+  const [grantRow] = await db
+    .select({ shareLinkId: projectShareGrants.shareLinkId })
+    .from(projectShareGrants)
+    .where(
+      and(
+        eq(projectShareGrants.projectId, projectId),
+        eq(projectShareGrants.userId, user.id),
+        isNotNull(projectShareGrants.shareLinkId)
+      )
+    )
+    .limit(1)
+
+  const displayName = grantRow
+    ? getReviewerAlias(projectId, user.id)
+    : (user.displayName ?? user.email)
+
   const session = liveblocks.prepareSession(user.id, {
     userInfo: {
       id: user.id,
-      name: user.displayName ?? user.email,
+      name: displayName,
       email: user.email,
       color: getPresenceColor(user.id),
     },
