@@ -27,25 +27,42 @@
   }
 
   .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
-    --popover: 222.2 84% 4.9%;
-    --popover-foreground: 210 40% 98%;
-    --primary: 210 40% 98%;
-    --primary-foreground: 222.2 47.4% 11.2%;
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 212.7 26.8% 83.9%;
+    /* App background — near-black navy */
+    --background: 230 30% 4%;
+    --foreground: 220 20% 96%;
+
+    /* Card / panel surfaces */
+    --card: 224 28% 7%;
+    --card-foreground: 220 20% 96%;
+
+    /* Popover / dropdown */
+    --popover: 224 28% 9%;
+    --popover-foreground: 220 20% 96%;
+
+    /* Primary = violet for CTAs */
+    --primary: 262 83% 58%;
+    --primary-foreground: 220 20% 98%;
+
+    /* Secondary = slightly lighter surface */
+    --secondary: 225 25% 12%;
+    --secondary-foreground: 220 15% 80%;
+
+    /* Muted = dim surface */
+    --muted: 225 25% 12%;
+    --muted-foreground: 222 14% 47%;
+
+    /* Accent = subtle highlight */
+    --accent: 225 25% 13%;
+    --accent-foreground: 220 20% 90%;
+
+    /* Destructive */
+    --destructive: 0 72% 42%;
+    --destructive-foreground: 220 20% 98%;
+
+    /* Borders and inputs */
+    --border: 225 20% 14%;
+    --input: 225 20% 12%;
+    --ring: 262 83% 65%;
   }
 
   * {
@@ -54,5 +71,8 @@
 
   body {
     @apply bg-background text-foreground;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 }

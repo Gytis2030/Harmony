@@ -1,6 +1,7 @@
 import { auth, currentUser } from '@clerk/nextjs/server'
 import { redirect } from 'next/navigation'
 import { Music2 } from 'lucide-react'
+import { UserButton } from '@clerk/nextjs'
 import { getUserByClerkId, provisionUser } from '@/lib/db/queries/users'
 import { getProjectsForUser } from '@/lib/db/queries/projects'
 import { getDashboardActivity } from '@/lib/db/queries/activity'
@@ -65,59 +66,69 @@ export default async function DashboardPage() {
   const hasAnyProject = allProjects.length > 0
 
   return (
-    <main className="min-h-screen bg-[#07070b] text-slate-100">
-      <div className="mx-auto max-w-5xl px-4 py-10">
-        {/* Header */}
-        <div className="mb-8 flex items-start justify-between gap-4">
-          <div>
-            <div className="mb-2 flex items-center gap-2">
-              <div className="flex h-6 w-6 items-center justify-center rounded-md bg-violet-500/15">
-                <Music2 className="h-3.5 w-3.5 text-violet-400" />
-              </div>
-              <span className="text-xs font-semibold uppercase tracking-widest text-violet-400/80">
-                Harmony
-              </span>
-            </div>
-            <h1 className="text-2xl font-semibold tracking-tight text-slate-100">Projects</h1>
-            <p className="mt-1 text-sm text-slate-500">
-              Private review rooms for stems, comments, and revisions.
-            </p>
+    <div className="min-h-screen bg-[#07080d]">
+      {/* ── Top nav / app shell ── */}
+      <nav className="sticky top-0 z-50 flex h-14 items-center justify-between border-b border-white/[0.06] bg-[#07080d]/95 px-5 backdrop-blur">
+        <div className="flex items-center gap-2.5">
+          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-violet-500/15 ring-1 ring-violet-500/25">
+            <Music2 className="h-3.5 w-3.5 text-violet-400" />
           </div>
-          <div className="shrink-0 pt-1">
-            <CreateProjectDialog label="New project room" />
-          </div>
+          <span className="text-sm font-semibold tracking-tight text-slate-100">Harmony</span>
         </div>
+        <div className="flex items-center gap-3">
+          <UserButton afterSignOutUrl="/" />
+        </div>
+      </nav>
 
-        {/* Empty state — no projects at all */}
-        {!hasAnyProject ? (
-          <div className="mt-24 flex flex-col items-center gap-6 text-center">
-            <div className="flex h-16 w-16 items-center justify-center rounded-2xl border border-white/10 bg-[#0f0f1a]">
-              <svg
-                className="h-8 w-8 text-violet-400"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={1.5}
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M9 9l10.5-3m0 6.553v3.75a2.25 2.25 0 01-1.632 2.163l-1.32.377a1.803 1.803 0 11-.99-3.467l2.31-.66a2.25 2.25 0 001.632-2.163zm0 0V2.25L9 5.25v10.303m0 0v3.75a2.25 2.25 0 01-1.632 2.163l-1.32.377a1.803 1.803 0 01-.99-3.467l2.31-.66A2.25 2.25 0 009 15.553z"
-                />
-              </svg>
-            </div>
+      <main className="text-slate-100">
+        <div className="mx-auto max-w-5xl px-5 py-10">
+          {/* Page header */}
+          <div className="mb-8 flex items-start justify-between gap-4">
             <div>
-              <p className="text-lg font-medium text-slate-200">Create your first project room</p>
-              <p className="mt-1 max-w-xs text-sm text-slate-500">
-                Upload stems, collect timestamped feedback, and track revisions — all in one place.
+              <h1 className="text-2xl font-bold tracking-tight text-slate-100">Project rooms</h1>
+              <p className="mt-1.5 text-sm text-slate-500">
+                Private rooms for stems, timestamped notes, and revision history.
               </p>
             </div>
-            <CreateProjectDialog label="New project room" />
+            <div className="shrink-0">
+              <CreateProjectDialog label="New project room" />
+            </div>
           </div>
-        ) : (
-          <DashboardShell allProjects={allProjects} activity={activity} currentUserId={user.id} />
-        )}
-      </div>
-    </main>
+
+          {/* Empty state */}
+          {!hasAnyProject ? (
+            <div className="mt-20 flex flex-col items-center gap-6 text-center">
+              <div className="flex h-20 w-20 items-center justify-center rounded-2xl border border-white/[0.08] bg-[#0d1018]">
+                <svg
+                  className="h-9 w-9 text-violet-400"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={1.4}
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M9 9l10.5-3m0 6.553v3.75a2.25 2.25 0 01-1.632 2.163l-1.32.377a1.803 1.803 0 11-.99-3.467l2.31-.66a2.25 2.25 0 001.632-2.163zm0 0V2.25L9 5.25v10.303m0 0v3.75a2.25 2.25 0 01-1.632 2.163l-1.32.377a1.803 1.803 0 01-.99-3.467l2.31-.66A2.25 2.25 0 009 15.553z"
+                  />
+                </svg>
+              </div>
+              <div className="max-w-sm">
+                <p className="text-lg font-semibold text-slate-200">
+                  Create your first project room
+                </p>
+                <p className="mt-2 text-sm leading-relaxed text-slate-500">
+                  Upload stems, invite collaborators, collect timestamped feedback, and track every
+                  revision — all in one private room.
+                </p>
+              </div>
+              <CreateProjectDialog label="New project room" />
+            </div>
+          ) : (
+            <DashboardShell allProjects={allProjects} activity={activity} currentUserId={user.id} />
+          )}
+        </div>
+      </main>
+    </div>
   )
 }

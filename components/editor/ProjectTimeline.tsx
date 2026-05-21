@@ -118,8 +118,8 @@ export default function ProjectTimeline({
   const projectComments = comments.filter((comment) => comment.trackId === null)
 
   return (
-    <section className="min-w-0 bg-[#08080d]">
-      <div className="border-b border-white/10 bg-[#101018] px-4 py-3 sm:px-5">
+    <section className="min-w-0 bg-[#07080d]">
+      <div className="border-b border-white/[0.07] bg-[#0a0c14] px-4 py-2.5 sm:px-5">
         <ProjectTransport
           projectId={projectId}
           zoom={zoom}
@@ -133,7 +133,7 @@ export default function ProjectTimeline({
         />
       </div>
 
-      <div ref={scrollRef} className="h-[calc(100vh-9rem)] overflow-auto bg-[#08080d]">
+      <div ref={scrollRef} className="h-[calc(100vh-7.5rem)] overflow-auto bg-[#07080d]">
         <div
           className="relative flex flex-col"
           style={
@@ -166,7 +166,7 @@ export default function ProjectTimeline({
               {markers.map((seconds) => (
                 <div
                   key={seconds}
-                  className="absolute top-0 h-full border-l border-white/[0.045]"
+                  className="absolute top-0 h-full border-l border-white/[0.035]"
                   style={{ left: `${(seconds / duration) * 100}%` }}
                 />
               ))}
@@ -202,23 +202,23 @@ export default function ProjectTimeline({
             ) : (
               <div
                 key={track.id}
-                className="relative grid min-h-24 grid-cols-[256px_minmax(560px,1fr)] border-b border-white/10"
+                className="relative grid min-h-[88px] grid-cols-[256px_minmax(560px,1fr)] border-b border-white/[0.06]"
               >
-                <div className="sticky left-0 z-40 flex items-center border-r border-white/10 bg-[#101018] px-4">
-                  <span className="truncate text-sm font-medium text-slate-200">{track.name}</span>
+                <div className="sticky left-0 z-40 flex items-center border-r border-white/[0.06] bg-[#0c0e18] px-4">
+                  <span className="truncate text-sm font-medium text-slate-300">{track.name}</span>
                 </div>
-                <div className="flex items-center px-5 text-xs uppercase tracking-wide text-slate-600">
-                  No audio file
+                <div className="flex items-center px-5 text-xs text-slate-700">
+                  No audio file attached
                 </div>
               </div>
             )
           )}
 
           {canUploadTracks && (
-            <div className="relative grid min-h-24 grid-cols-[256px_minmax(560px,1fr)] border-b border-white/10">
-              <div className="sticky left-0 z-40 flex items-center border-r border-white/10 bg-[#101018] px-4">
-                <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Add stem
+            <div className="relative grid min-h-[88px] grid-cols-[256px_minmax(560px,1fr)] border-b border-white/[0.06]">
+              <div className="sticky left-0 z-40 flex items-center border-r border-white/[0.06] bg-[#0c0e18] px-4">
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-600">
+                  Add stems
                 </span>
               </div>
               <div className="px-4 py-3">

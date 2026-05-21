@@ -267,55 +267,54 @@ function ProjectEditorInner({
 
   return (
     <>
-      <header className="flex min-h-16 items-center justify-between border-b border-white/10 bg-[#0c0c12]/95 px-4 backdrop-blur sm:px-6">
-        <div className="flex min-w-0 items-center gap-4">
+      <header className="flex min-h-[56px] items-center justify-between border-b border-white/[0.08] bg-[#0a0b12]/98 px-4 backdrop-blur sm:px-6">
+        <div className="flex min-w-0 items-center gap-3">
           <Link
             href="/dashboard"
-            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-white/10 text-slate-400 transition hover:border-white/20 hover:bg-white/5 hover:text-white"
+            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-white/[0.08] text-slate-500 transition hover:border-white/[0.16] hover:bg-white/[0.05] hover:text-slate-200"
             aria-label="Back to dashboard"
           >
             <ArrowLeft className="h-4 w-4" />
           </Link>
           <div className="min-w-0">
-            <h1 className="truncate text-base font-semibold text-white sm:text-lg">
+            <h1 className="truncate text-sm font-semibold text-slate-100 sm:text-base">
               {projectName}
             </h1>
-            <div className="mt-1 flex items-center gap-2 text-xs text-slate-500">
-              <Circle className="h-2 w-2 fill-emerald-400 text-emerald-400" />
+            <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-slate-600">
+              <Circle className="h-1.5 w-1.5 fill-emerald-500 text-emerald-500" />
               <span>Saved</span>
-              <span className="hidden sm:inline">Local session</span>
             </div>
           </div>
         </div>
 
         <div className="flex shrink-0 items-center gap-2">
+          <PresenceAvatars />
+          <button
+            type="button"
+            onClick={() =>
+              setTabRequest((prev) => ({ tab: 'activity', seq: (prev?.seq ?? 0) + 1 }))
+            }
+            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-white/[0.08] text-slate-500 transition hover:border-white/[0.16] hover:bg-white/[0.05] hover:text-slate-200"
+            aria-label="View activity"
+          >
+            <Activity className="h-4 w-4" />
+          </button>
           {(currentUserRole === 'owner' || currentUserRole === 'editor') && (
             <button
               type="button"
               onClick={() =>
                 setTabRequest((prev) => ({ tab: 'people', seq: (prev?.seq ?? 0) + 1 }))
               }
-              className="inline-flex h-9 items-center gap-1.5 rounded-md border border-violet-500/40 bg-violet-500/10 px-3 text-sm font-semibold text-violet-300 transition hover:bg-violet-500/20 hover:text-violet-100"
+              className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-violet-600 px-4 text-sm font-semibold text-white shadow-[0_0_20px_rgba(124,58,237,0.3)] transition hover:bg-violet-500 hover:shadow-[0_0_28px_rgba(124,58,237,0.45)]"
             >
               <Users className="h-3.5 w-3.5" />
               Share
             </button>
           )}
-          <button
-            type="button"
-            onClick={() =>
-              setTabRequest((prev) => ({ tab: 'activity', seq: (prev?.seq ?? 0) + 1 }))
-            }
-            className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-white/10 text-slate-400 transition hover:border-white/20 hover:bg-white/5 hover:text-white"
-            aria-label="View activity"
-          >
-            <Activity className="h-4 w-4" />
-          </button>
-          <PresenceAvatars />
         </div>
       </header>
 
-      <div className="grid min-h-[calc(100vh-4rem)] grid-cols-1 xl:grid-cols-[minmax(0,1fr)_300px]">
+      <div className="grid min-h-[calc(100vh-56px)] grid-cols-1 xl:grid-cols-[minmax(0,1fr)_320px]">
         <ProjectTimeline
           projectId={projectId}
           tracks={tracks}

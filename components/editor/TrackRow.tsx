@@ -259,18 +259,22 @@ export default function TrackRow({
   const durationLabel = state.audioBuffer ? formatDuration(state.audioBuffer.duration) : '--:--'
 
   return (
-    <div className="relative grid min-h-24 grid-cols-[256px_minmax(560px,1fr)] border-b border-white/10">
-      <div className="sticky left-0 z-40 border-r border-white/10 bg-[#101018]">
+    <div className="relative grid min-h-[88px] grid-cols-[256px_minmax(560px,1fr)] border-b border-white/[0.06]">
+      {/* Track label / controls */}
+      <div className="sticky left-0 z-40 border-r border-white/[0.06] bg-[#0c0e18]">
         <div className="flex h-full">
-          <div className="w-1.5 shrink-0" style={{ backgroundColor: accentColor }} />
+          <div className="w-1 shrink-0" style={{ backgroundColor: accentColor }} />
           <div className="min-w-0 flex-1 px-3 py-3">
-            <div className="flex items-start gap-2">
+            <div className="flex items-start gap-1.5">
               <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-semibold text-slate-100" title={trackName}>
+                <p className="truncate text-xs font-semibold text-slate-200" title={trackName}>
                   {trackName}
                 </p>
-                <p className="mt-1 truncate text-[11px] text-slate-500" title={originalFilename}>
-                  {durationLabel} / {formatFileSize(sizeBytes)}
+                <p
+                  className="mt-0.5 truncate font-mono text-[10px] tabular-nums text-slate-600"
+                  title={originalFilename}
+                >
+                  {durationLabel} · {formatFileSize(sizeBytes)}
                 </p>
               </div>
               {canEditMix && (
@@ -281,32 +285,32 @@ export default function TrackRow({
                       setMenuOpen((o) => !o)
                       setConfirmRemove(false)
                     }}
-                    className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded text-slate-500 transition hover:bg-white/5 hover:text-slate-200"
+                    className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-slate-700 transition hover:bg-white/[0.06] hover:text-slate-300"
                     aria-label={`${trackName} menu`}
                   >
-                    <MoreHorizontal className="h-4 w-4" />
+                    <MoreHorizontal className="h-3.5 w-3.5" />
                   </button>
 
                   {menuOpen && (
-                    <div className="absolute right-0 top-8 z-50 min-w-[140px] rounded border border-white/10 bg-[#14141e] shadow-xl">
+                    <div className="absolute right-0 top-7 z-50 min-w-[148px] overflow-hidden rounded-xl border border-white/[0.1] bg-[#141924] shadow-2xl">
                       {!confirmRemove ? (
                         <button
                           type="button"
                           onClick={() => setConfirmRemove(true)}
-                          className="flex w-full items-center gap-2 px-3 py-2 text-xs text-red-300 transition hover:bg-red-400/10"
+                          className="flex w-full items-center gap-2 px-3 py-2 text-xs text-red-300 transition hover:bg-red-500/10"
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                           Remove stem
                         </button>
                       ) : (
-                        <div className="px-3 py-2">
-                          <p className="mb-2 text-[11px] text-slate-300">Remove this stem?</p>
+                        <div className="px-3 py-2.5">
+                          <p className="mb-2 text-[11px] text-slate-400">Remove this stem?</p>
                           <div className="flex gap-1.5">
                             <button
                               type="button"
                               onClick={() => setConfirmRemove(false)}
                               disabled={isRemoving}
-                              className="flex items-center gap-1 rounded border border-white/10 px-2 py-1 text-[10px] text-slate-400 hover:bg-white/5"
+                              className="flex items-center gap-1 rounded-lg border border-white/[0.1] px-2.5 py-1 text-[10px] text-slate-500 hover:bg-white/[0.05]"
                             >
                               <X className="h-3 w-3" />
                               Cancel
@@ -315,7 +319,7 @@ export default function TrackRow({
                               type="button"
                               onClick={handleRemoveConfirm}
                               disabled={isRemoving}
-                              className="rounded bg-red-600 px-2 py-1 text-[10px] font-semibold text-white transition hover:bg-red-500 disabled:opacity-50"
+                              className="rounded-lg bg-red-600 px-2.5 py-1 text-[10px] font-semibold text-white transition hover:bg-red-500 disabled:opacity-50"
                             >
                               {isRemoving ? 'Removing…' : 'Remove'}
                             </button>
@@ -328,15 +332,15 @@ export default function TrackRow({
               )}
             </div>
 
-            <div className="mt-3 flex items-center gap-2">
+            <div className="mt-2.5 flex items-center gap-1.5">
               <button
                 onClick={handleMuteToggle}
                 disabled={isLoading || !canEditMix}
                 aria-pressed={state.muted}
-                className={`h-7 w-8 rounded border text-xs font-semibold disabled:opacity-50 ${
+                className={`h-6 w-7 rounded border text-[10px] font-semibold disabled:opacity-40 ${
                   state.muted
-                    ? 'border-orange-400/60 bg-orange-400/20 text-orange-200'
-                    : 'border-white/10 text-slate-400 hover:bg-white/5 hover:text-white'
+                    ? 'border-orange-400/50 bg-orange-400/15 text-orange-300'
+                    : 'border-white/[0.08] text-slate-600 hover:border-white/[0.16] hover:text-slate-300'
                 }`}
               >
                 M
@@ -346,10 +350,10 @@ export default function TrackRow({
                 onClick={handleSoloToggle}
                 disabled={isLoading || !canEditMix}
                 aria-pressed={soloed}
-                className={`h-7 w-8 rounded border text-xs font-semibold disabled:opacity-50 ${
+                className={`h-6 w-7 rounded border text-[10px] font-semibold disabled:opacity-40 ${
                   soloed
-                    ? 'border-yellow-300/60 bg-yellow-300/20 text-yellow-100'
-                    : 'border-white/10 text-slate-400 hover:bg-white/5 hover:text-white'
+                    ? 'border-yellow-300/50 bg-yellow-300/15 text-yellow-200'
+                    : 'border-white/[0.08] text-slate-600 hover:border-white/[0.16] hover:text-slate-300'
                 }`}
               >
                 S
@@ -363,24 +367,26 @@ export default function TrackRow({
                 value={state.volume}
                 onChange={handleVolumeChange}
                 disabled={isLoading || !canEditMix}
-                className="h-1 min-w-0 flex-1 accent-[#7c3aed] disabled:opacity-50"
+                className="h-1 min-w-0 flex-1 accent-[#7c3aed] disabled:opacity-40"
                 aria-label={`${trackName} volume`}
               />
             </div>
           </div>
         </div>
       </div>
+
+      {/* Waveform / timeline area */}
       <div
         ref={timelineRef}
         onClick={handleTimelineClick}
         className={[
-          'relative flex min-w-0 cursor-pointer items-center bg-[#0b0b12] py-3',
+          'relative flex min-w-0 cursor-pointer items-center bg-[#090a12] py-3',
           commentMode ? 'cursor-crosshair' : '',
         ].join(' ')}
       >
-        {state.loadError && <span className="text-xs text-red-300">{state.loadError}</span>}
+        {state.loadError && <span className="ml-3 text-xs text-red-400">{state.loadError}</span>}
         {isLoading && !state.loadError && !state.audioBuffer && (
-          <span className="text-xs text-slate-500">Loading...</span>
+          <span className="ml-3 text-xs text-slate-700">Loading…</span>
         )}
         {state.audioBuffer && (
           <Waveform
@@ -406,16 +412,16 @@ export default function TrackRow({
                 className={[
                   'absolute top-2 z-20 inline-flex h-6 w-6 -translate-x-1/2 items-center justify-center rounded-full border transition',
                   isSelected
-                    ? 'scale-110 border-violet-400 bg-[#7c3aed] text-white shadow-[0_0_18px_rgba(124,58,237,0.75)]'
+                    ? 'scale-110 border-violet-400 bg-violet-600 text-white shadow-[0_0_16px_rgba(124,58,237,0.65)]'
                     : isResolved
-                      ? 'border-white/10 bg-[#111120] text-slate-500 opacity-50 hover:opacity-80 hover:text-slate-400'
-                      : 'border-white/20 bg-[#141421] text-violet-100 shadow-[0_0_14px_rgba(124,58,237,0.35)] hover:border-violet-300/60 hover:bg-[#7c3aed]',
+                      ? 'border-white/[0.08] bg-[#111120] text-slate-600 opacity-40 hover:opacity-70'
+                      : 'border-white/[0.15] bg-[#141421] text-violet-300 shadow-[0_0_10px_rgba(124,58,237,0.28)] hover:border-violet-400/50 hover:bg-violet-600',
                 ].join(' ')}
                 style={{ left: `${(comment.timestampSeconds / projectDuration) * 100}%` }}
                 aria-label={`Open comment at ${formatDuration(comment.timestampSeconds)}`}
                 title={comment.body}
               >
-                <MessageSquare className="h-3.5 w-3.5" />
+                <MessageSquare className="h-3 w-3" />
               </button>
             )
           })}

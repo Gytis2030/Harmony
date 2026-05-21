@@ -48,7 +48,7 @@ export default function TimelineMarkers({
   if (duration <= 0) {
     return (
       <div
-        className="sticky top-0 z-20 h-9 border-b border-white/10 bg-[#0d0d15]"
+        className="sticky top-0 z-20 h-8 border-b border-white/[0.06] bg-[#0a0c14]"
         style={style}
         aria-hidden="true"
       />
@@ -59,7 +59,7 @@ export default function TimelineMarkers({
     <div
       onClick={handleClick}
       className={[
-        'sticky top-0 z-20 h-9 cursor-pointer border-b border-white/10 bg-[#0d0d15] text-[10px] tabular-nums text-slate-500',
+        'sticky top-0 z-20 h-8 cursor-pointer border-b border-white/[0.06] bg-[#0a0c14] font-mono text-[10px] tabular-nums text-slate-700',
         commentMode ? 'cursor-crosshair' : '',
       ].join(' ')}
       style={style}
@@ -68,7 +68,7 @@ export default function TimelineMarkers({
       {markers.map((seconds) => (
         <div
           key={seconds}
-          className="absolute top-0 flex h-full items-start border-l border-white/10 pl-1.5 pt-2"
+          className="absolute top-0 flex h-full items-end border-l border-white/[0.08] pb-1.5 pl-1.5"
           style={{ left: `${(seconds / duration) * 100}%` }}
         >
           {formatTime(seconds)}
@@ -88,16 +88,16 @@ export default function TimelineMarkers({
             className={[
               'absolute top-1 z-20 inline-flex h-6 w-6 -translate-x-1/2 items-center justify-center rounded-full border transition',
               isSelected
-                ? 'scale-110 border-violet-400 bg-[#7c3aed] text-white shadow-[0_0_18px_rgba(124,58,237,0.75)]'
+                ? 'scale-110 border-violet-400 bg-violet-600 text-white shadow-[0_0_16px_rgba(124,58,237,0.65)]'
                 : isResolved
-                  ? 'border-white/10 bg-[#111120] text-slate-500 opacity-50 hover:opacity-80 hover:text-slate-400'
-                  : 'border-white/20 bg-[#141421] text-violet-100 shadow-[0_0_14px_rgba(124,58,237,0.35)] hover:border-violet-300/60 hover:bg-[#7c3aed]',
+                  ? 'border-white/[0.08] bg-[#111120] text-slate-600 opacity-40 hover:opacity-70'
+                  : 'border-white/[0.15] bg-[#141421] text-violet-300 shadow-[0_0_10px_rgba(124,58,237,0.28)] hover:border-violet-400/50 hover:bg-violet-600',
             ].join(' ')}
             style={{ left: `${(comment.timestampSeconds / duration) * 100}%` }}
             aria-label={`Open project comment at ${formatTime(comment.timestampSeconds)}`}
             title={comment.body}
           >
-            <MessageSquare className="h-3.5 w-3.5" />
+            <MessageSquare className="h-3 w-3" />
           </button>
         )
       })}

@@ -140,8 +140,8 @@ function CommentAvatar({ name, size = 'md' }: { name: string; size?: 'sm' | 'md'
   const initial = (name || '?').charAt(0).toUpperCase()
   const cls =
     size === 'sm'
-      ? 'h-5 w-5 shrink-0 rounded-full border border-violet-600/20 bg-violet-600/25 text-[9px] font-bold text-violet-200 flex items-center justify-center'
-      : 'h-7 w-7 shrink-0 rounded-full border border-violet-600/20 bg-violet-600/25 text-xs font-bold text-violet-200 flex items-center justify-center'
+      ? 'h-5 w-5 shrink-0 rounded-full border border-white/[0.1] bg-[#1e2235] text-[9px] font-semibold text-slate-400 flex items-center justify-center'
+      : 'h-7 w-7 shrink-0 rounded-full border border-white/[0.1] bg-[#1e2235] text-[11px] font-semibold text-slate-300 flex items-center justify-center'
   return <div className={cls}>{initial}</div>
 }
 
@@ -604,22 +604,22 @@ export default function CollaborationSidebar({
     : activity
 
   return (
-    <aside className="flex flex-col border-t border-white/10 bg-[#0b0b11] xl:border-l xl:border-t-0">
+    <aside className="flex flex-col border-t border-white/[0.07] bg-[#0a0c14] xl:border-l xl:border-t-0">
       {/* ── sticky header ── */}
-      <div className="sticky top-0 z-10 border-b border-white/10 bg-[#0b0b11]">
+      <div className="sticky top-0 z-10 border-b border-white/[0.07] bg-[#0a0c14]">
         {/* tab bar */}
-        <div className="flex border-b border-white/10">
+        <div className="flex border-b border-white/[0.06]">
           <button
             type="button"
             onClick={() => setActiveTab('comments')}
             className={[
               'flex-1 py-2.5 text-xs font-semibold transition',
               activeTab === 'comments'
-                ? 'border-b-2 border-violet-500 text-white'
-                : 'text-slate-500 hover:text-slate-300',
+                ? 'border-b-2 border-violet-500 text-slate-100'
+                : 'text-slate-600 hover:text-slate-300',
             ].join(' ')}
           >
-            Comments {counts.all > 0 ? `(${counts.all})` : ''}
+            Notes {counts.all > 0 ? `(${counts.all})` : ''}
           </button>
           <button
             type="button"
@@ -627,11 +627,11 @@ export default function CollaborationSidebar({
             className={[
               'flex-1 py-2.5 text-xs font-semibold transition',
               activeTab === 'versions'
-                ? 'border-b-2 border-violet-500 text-white'
-                : 'text-slate-500 hover:text-slate-300',
+                ? 'border-b-2 border-violet-500 text-slate-100'
+                : 'text-slate-600 hover:text-slate-300',
             ].join(' ')}
           >
-            Versions {displayedVersions.length > 0 ? `(${displayedVersions.length})` : ''}
+            Revisions {displayedVersions.length > 0 ? `(${displayedVersions.length})` : ''}
           </button>
           <button
             type="button"
@@ -639,8 +639,8 @@ export default function CollaborationSidebar({
             className={[
               'flex-1 py-2.5 text-xs font-semibold transition',
               activeTab === 'people'
-                ? 'border-b-2 border-violet-500 text-white'
-                : 'text-slate-500 hover:text-slate-300',
+                ? 'border-b-2 border-violet-500 text-slate-100'
+                : 'text-slate-600 hover:text-slate-300',
             ].join(' ')}
           >
             People {onlineCount > 0 ? `(${onlineCount})` : ''}
@@ -651,11 +651,11 @@ export default function CollaborationSidebar({
             className={[
               'flex-1 py-2.5 text-xs font-semibold transition',
               activeTab === 'activity'
-                ? 'border-b-2 border-violet-500 text-white'
-                : 'text-slate-500 hover:text-slate-300',
+                ? 'border-b-2 border-violet-500 text-slate-100'
+                : 'text-slate-600 hover:text-slate-300',
             ].join(' ')}
           >
-            Activity
+            Log
           </button>
         </div>
 
@@ -667,14 +667,14 @@ export default function CollaborationSidebar({
                 <button
                   type="button"
                   onClick={() => onCommentSelect(null)}
-                  className="inline-flex items-center gap-1.5 text-sm font-semibold text-slate-400 transition hover:text-white"
+                  className="inline-flex items-center gap-1.5 text-sm font-semibold text-slate-500 transition hover:text-slate-200"
                 >
                   <ArrowLeft className="h-3.5 w-3.5" />
-                  Comments
+                  All notes
                 </button>
               ) : (
                 <span className="text-sm font-semibold text-slate-200">
-                  {commentMode ? 'New comment' : 'Comments'}
+                  {commentMode ? 'New note' : 'Timestamped notes'}
                 </span>
               )}
 
@@ -682,7 +682,7 @@ export default function CollaborationSidebar({
                 <button
                   type="button"
                   onClick={handleCancel}
-                  className="inline-flex h-7 w-7 items-center justify-center rounded border border-white/10 text-slate-400 transition hover:bg-white/5 hover:text-white"
+                  className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-white/[0.08] text-slate-500 transition hover:bg-white/[0.05] hover:text-slate-200"
                   aria-label="Cancel comment mode"
                 >
                   <X className="h-3.5 w-3.5" />
@@ -691,17 +691,18 @@ export default function CollaborationSidebar({
                 <button
                   type="button"
                   onClick={onStartCommentMode}
-                  className="inline-flex h-7 w-7 items-center justify-center rounded border border-[#7c3aed]/50 bg-[#7c3aed]/20 text-violet-100 transition hover:bg-[#7c3aed]/30"
-                  aria-label="Add comment"
+                  className="inline-flex h-7 items-center gap-1.5 rounded-lg border border-violet-500/40 bg-violet-500/12 px-2.5 text-xs font-semibold text-violet-300 transition hover:bg-violet-500/20 hover:text-violet-100"
+                  aria-label="Add timestamped note"
                 >
                   <Plus className="h-3.5 w-3.5" />
+                  Add note
                 </button>
               ) : null}
             </div>
 
             {/* filter tabs – list view only */}
             {isListView && (
-              <div className="flex border-t border-white/10">
+              <div className="flex border-t border-white/[0.06]">
                 {(Object.keys(FILTER_LABELS) as CommentFilter[]).map((f) => (
                   <button
                     key={f}
@@ -710,8 +711,8 @@ export default function CollaborationSidebar({
                     className={[
                       'flex-1 py-2 text-[11px] font-medium transition',
                       filter === f
-                        ? 'border-b-2 border-violet-500 text-white'
-                        : 'text-slate-500 hover:text-slate-300',
+                        ? 'border-b-2 border-violet-500 text-slate-200'
+                        : 'text-slate-600 hover:text-slate-400',
                     ].join(' ')}
                   >
                     {FILTER_LABELS[f]} {counts[f] > 0 ? `(${counts[f]})` : ''}
@@ -725,12 +726,12 @@ export default function CollaborationSidebar({
         {/* activity tab sub-header */}
         {activeTab === 'activity' && (
           <div className="flex items-center justify-between px-4 py-3">
-            <span className="text-sm font-semibold text-slate-200">Activity</span>
+            <span className="text-sm font-semibold text-slate-200">Session log</span>
             {visibleActivity.length > 0 && (
               <button
                 type="button"
                 onClick={() => setClearedBefore(Date.now())}
-                className="text-xs text-slate-500 transition hover:text-slate-300"
+                className="text-xs text-slate-600 transition hover:text-slate-300"
               >
                 Clear
               </button>
@@ -741,9 +742,9 @@ export default function CollaborationSidebar({
         {/* people tab sub-header */}
         {activeTab === 'people' && (
           <div className="flex items-center justify-between px-4 py-3">
-            <span className="text-sm font-semibold text-slate-200">People</span>
+            <span className="text-sm font-semibold text-slate-200">Share & collaborators</span>
             {canInvite && (
-              <span className="text-[10px] text-slate-500">
+              <span className="text-[10px] text-slate-600">
                 {invites.length > 0 ? `${invites.length} pending` : ''}
               </span>
             )}
@@ -761,14 +762,14 @@ export default function CollaborationSidebar({
                   setRestoreConfirm(false)
                   setRestoreError(null)
                 }}
-                className="inline-flex items-center gap-1.5 text-sm font-semibold text-slate-400 transition hover:text-white"
+                className="inline-flex items-center gap-1.5 text-sm font-semibold text-slate-500 transition hover:text-slate-200"
               >
                 <ArrowLeft className="h-3.5 w-3.5" />
-                Versions
+                All revisions
               </button>
             ) : (
               <>
-                <span className="text-sm font-semibold text-slate-200">Versions</span>
+                <span className="text-sm font-semibold text-slate-200">Revision history</span>
                 {canManageVersions && !versionFormOpen && (
                   <button
                     type="button"
@@ -776,10 +777,10 @@ export default function CollaborationSidebar({
                       setVersionFormOpen(true)
                       setVersionError(null)
                     }}
-                    className="inline-flex items-center gap-1.5 rounded border border-[#7c3aed]/50 bg-[#7c3aed]/20 px-2.5 py-1.5 text-xs font-semibold text-violet-100 transition hover:bg-[#7c3aed]/30"
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-violet-500/40 bg-violet-500/12 px-2.5 py-1.5 text-xs font-semibold text-violet-300 transition hover:bg-violet-500/20 hover:text-violet-100"
                   >
                     <Save className="h-3 w-3" />
-                    Save Version
+                    Save revision
                   </button>
                 )}
               </>
@@ -790,25 +791,25 @@ export default function CollaborationSidebar({
 
       {/* ── scrollable body ── */}
       <div className="flex-1 overflow-y-auto">
-        <div className="space-y-5 px-4 py-4">
+        <div className="space-y-4 px-4 py-4">
           {/* ── comments tab content ── */}
           {activeTab === 'comments' && (
             <>
               {/* comment mode indicator */}
               {commentMode && !target && (
-                <div className="rounded border border-violet-400/25 bg-violet-400/8 px-3 py-3">
-                  <p className="text-sm leading-5 text-violet-100">
-                    Click the ruler or a track lane to leave a note.
+                <div className="rounded-xl border border-violet-500/25 bg-violet-500/8 px-4 py-4">
+                  <p className="text-sm leading-5 text-violet-200">
+                    Click the timeline ruler or a track lane to pin a note.
                   </p>
                   <button
                     type="button"
                     onClick={handleAddAtPlayhead}
-                    className="mt-2 inline-flex items-center gap-1.5 text-xs text-violet-300 transition hover:text-violet-100"
+                    className="mt-3 inline-flex items-center gap-1.5 text-xs font-medium text-violet-400 transition hover:text-violet-200"
                   >
                     <MessageSquarePlus className="h-3.5 w-3.5" />
-                    Add at playhead position
+                    Pin at playhead position
                   </button>
-                  <p className="mt-2 text-[10px] text-violet-400/60">Press Esc to cancel</p>
+                  <p className="mt-2 text-[10px] text-violet-500/50">Press Esc to cancel</p>
                 </div>
               )}
 
@@ -816,16 +817,23 @@ export default function CollaborationSidebar({
               {target && (
                 <form
                   onSubmit={handleSubmit}
-                  className="rounded border border-white/10 bg-black/25 p-3"
+                  className="rounded-xl border border-white/[0.1] bg-[#0f1220] p-4"
                 >
-                  <div className="mb-2 flex items-center justify-between gap-3">
-                    <p className="min-w-0 truncate text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      {target.trackName ?? 'Project'} / {formatTime(target.timestampSeconds)}
-                    </p>
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2">
+                      <span className="rounded-md bg-violet-500/15 px-2 py-0.5 font-mono text-[10px] font-semibold text-violet-400">
+                        @ {formatTime(target.timestampSeconds)}
+                      </span>
+                      {target.trackName && (
+                        <span className="truncate text-[10px] text-slate-600">
+                          {target.trackName}
+                        </span>
+                      )}
+                    </div>
                     <button
                       type="button"
                       onClick={handleCancel}
-                      className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-slate-500 hover:bg-white/5 hover:text-slate-200"
+                      className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-slate-600 hover:bg-white/[0.06] hover:text-slate-300"
                       aria-label="Cancel composer"
                     >
                       <X className="h-3.5 w-3.5" />
@@ -836,26 +844,26 @@ export default function CollaborationSidebar({
                     onChange={(e) => setBody(e.target.value)}
                     rows={4}
                     maxLength={2000}
-                    className="w-full resize-none rounded border border-white/10 bg-[#09090f] px-3 py-2 text-sm text-slate-100 outline-none transition placeholder:text-slate-600 focus:border-[#7c3aed]/70"
-                    placeholder="Leave a note..."
+                    className="w-full resize-none rounded-lg border border-white/[0.1] bg-[#07080d] px-3 py-2.5 text-sm text-slate-100 outline-none transition placeholder:text-slate-700 focus:border-violet-500/50 focus:ring-1 focus:ring-violet-500/20"
+                    placeholder="Leave a note at this timestamp…"
                     disabled={isPending}
                     autoFocus
                   />
-                  {composeError && <p className="mt-2 text-xs text-red-300">{composeError}</p>}
+                  {composeError && <p className="mt-2 text-xs text-red-400">{composeError}</p>}
                   <div className="mt-3 flex items-center justify-end gap-2">
                     <button
                       type="button"
                       onClick={handleCancel}
-                      className="rounded border border-white/10 px-3 py-1.5 text-xs font-semibold text-slate-400 hover:bg-white/5 hover:text-white"
+                      className="rounded-lg border border-white/[0.08] px-3 py-1.5 text-xs font-semibold text-slate-500 hover:bg-white/[0.05] hover:text-slate-200"
                     >
                       Cancel
                     </button>
                     <button
                       type="submit"
                       disabled={isPending || body.trim().length === 0}
-                      className="rounded bg-[#7c3aed] px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-[#8b5cf6] disabled:opacity-50"
+                      className="rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-violet-500 disabled:opacity-50"
                     >
-                      {isPending ? 'Saving…' : 'Save'}
+                      {isPending ? 'Saving…' : 'Save note'}
                     </button>
                   </div>
                 </form>
@@ -915,7 +923,7 @@ export default function CollaborationSidebar({
           {activeTab === 'people' && (
             <>
               {!isWorkspaceMember ? (
-                <div className="rounded border border-white/10 bg-white/[0.025] p-4 text-center">
+                <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] p-4 text-center">
                   <p className="text-sm text-slate-400">
                     {canComment
                       ? 'You have comment access to this project.'
@@ -994,19 +1002,17 @@ export default function CollaborationSidebar({
               {canManageVersions && versionFormOpen && (
                 <form
                   onSubmit={handleVersionSubmit}
-                  className="rounded border border-white/10 bg-black/25 p-3"
+                  className="rounded-xl border border-white/[0.1] bg-[#0f1220] p-4"
                 >
                   <div className="mb-3 flex items-center justify-between">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      New version
-                    </p>
+                    <p className="text-xs font-semibold text-slate-300">Save revision snapshot</p>
                     <button
                       type="button"
                       onClick={() => {
                         setVersionFormOpen(false)
                         setVersionError(null)
                       }}
-                      className="inline-flex h-6 w-6 items-center justify-center rounded text-slate-500 hover:bg-white/5 hover:text-slate-200"
+                      className="inline-flex h-6 w-6 items-center justify-center rounded text-slate-600 hover:bg-white/[0.06] hover:text-slate-300"
                       aria-label="Cancel"
                     >
                       <X className="h-3.5 w-3.5" />
@@ -1017,8 +1023,8 @@ export default function CollaborationSidebar({
                     value={versionName}
                     onChange={(e) => setVersionName(e.target.value)}
                     maxLength={200}
-                    placeholder="Version name (e.g. Rough mix)"
-                    className="w-full rounded border border-white/10 bg-[#09090f] px-3 py-2 text-sm text-slate-100 outline-none transition placeholder:text-slate-600 focus:border-[#7c3aed]/70"
+                    placeholder="Revision name (e.g. v3 — Vocals Up)"
+                    className="w-full rounded-lg border border-white/[0.1] bg-[#07080d] px-3 py-2 text-sm text-slate-100 outline-none transition placeholder:text-slate-700 focus:border-violet-500/50 focus:ring-1 focus:ring-violet-500/20"
                     disabled={isVersionPending}
                     autoFocus
                   />
@@ -1027,11 +1033,11 @@ export default function CollaborationSidebar({
                     onChange={(e) => setVersionDesc(e.target.value)}
                     rows={2}
                     maxLength={500}
-                    placeholder="Description (optional)"
-                    className="mt-2 w-full resize-none rounded border border-white/10 bg-[#09090f] px-3 py-2 text-sm text-slate-100 outline-none transition placeholder:text-slate-600 focus:border-[#7c3aed]/70"
+                    placeholder="Notes (optional)"
+                    className="mt-2 w-full resize-none rounded-lg border border-white/[0.1] bg-[#07080d] px-3 py-2 text-sm text-slate-100 outline-none transition placeholder:text-slate-700 focus:border-violet-500/50 focus:ring-1 focus:ring-violet-500/20"
                     disabled={isVersionPending}
                   />
-                  {versionError && <p className="mt-2 text-xs text-red-300">{versionError}</p>}
+                  {versionError && <p className="mt-2 text-xs text-red-400">{versionError}</p>}
                   <div className="mt-3 flex items-center justify-end gap-2">
                     <button
                       type="button"
@@ -1039,16 +1045,16 @@ export default function CollaborationSidebar({
                         setVersionFormOpen(false)
                         setVersionError(null)
                       }}
-                      className="rounded border border-white/10 px-3 py-1.5 text-xs font-semibold text-slate-400 hover:bg-white/5 hover:text-white"
+                      className="rounded-lg border border-white/[0.08] px-3 py-1.5 text-xs font-semibold text-slate-500 hover:bg-white/[0.05] hover:text-slate-200"
                     >
                       Cancel
                     </button>
                     <button
                       type="submit"
                       disabled={isVersionPending || versionName.trim().length === 0}
-                      className="rounded bg-[#7c3aed] px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-[#8b5cf6] disabled:opacity-50"
+                      className="rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-violet-500 disabled:opacity-50"
                     >
-                      {isVersionPending ? 'Saving…' : 'Save'}
+                      {isVersionPending ? 'Saving…' : 'Save revision'}
                     </button>
                   </div>
                 </form>
@@ -1056,19 +1062,19 @@ export default function CollaborationSidebar({
 
               {/* success message */}
               {versionSuccess && (
-                <div className="rounded border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-300">
+                <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/8 px-4 py-3 text-xs text-emerald-400">
                   {versionSuccess}
                 </div>
               )}
 
               {/* version list / detail */}
               {!isWorkspaceMember && versions.length === 0 ? (
-                <div className="rounded border border-white/10 bg-white/[0.025] p-4 text-center">
-                  <p className="text-sm text-slate-400">
-                    Versions are managed by the project owner.
+                <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] p-4 text-center">
+                  <p className="text-sm text-slate-500">
+                    Revisions are managed by the project owner.
                   </p>
-                  <p className="mt-1 text-xs text-slate-600">
-                    Ask an editor or owner to save a version snapshot.
+                  <p className="mt-1 text-xs text-slate-700">
+                    Ask an editor or owner to save a revision snapshot.
                   </p>
                 </div>
               ) : selectedVersionId ? (
@@ -1141,12 +1147,11 @@ function ThreadView({
   return (
     <div className="space-y-4">
       {/* context line */}
-      <div className="flex items-center gap-2 text-xs text-slate-500">
-        <span className="rounded bg-white/[0.06] px-1.5 py-0.5 font-medium">
+      <div className="flex flex-wrap items-center gap-2 text-xs">
+        <span className="rounded-md bg-white/[0.06] px-1.5 py-0.5 font-medium text-slate-500">
           {comment.trackName ?? 'Project'}
         </span>
-        <span>·</span>
-        <span>{formatTime(comment.timestampSeconds)}</span>
+        <span className="font-mono text-violet-500">@ {formatTime(comment.timestampSeconds)}</span>
         {comment.isPinned && (
           <>
             <span>·</span>
@@ -1185,7 +1190,7 @@ function ThreadView({
 
       {/* replies */}
       {comment.replies.length > 0 && (
-        <div className="space-y-3 border-l border-white/10 pl-3">
+        <div className="space-y-3 border-l border-white/[0.07] pl-3">
           {comment.replies.map((reply) => (
             <div key={reply.id} className="flex gap-2">
               <CommentAvatar name={reply.authorName} size="sm" />
@@ -1215,16 +1220,16 @@ function ThreadView({
             onChange={(e) => onReplyChange(e.target.value)}
             rows={2}
             maxLength={2000}
-            className="w-full resize-none rounded border border-white/10 bg-[#09090f] px-3 py-2 text-sm text-slate-100 outline-none transition placeholder:text-slate-600 focus:border-[#7c3aed]/70"
-            placeholder="Write a reply…"
+            className="w-full resize-none rounded-lg border border-white/[0.1] bg-[#07080d] px-3 py-2 text-sm text-slate-100 outline-none transition placeholder:text-slate-700 focus:border-violet-500/50 focus:ring-1 focus:ring-violet-500/20"
+            placeholder="Reply…"
             disabled={isPending}
           />
-          {replyError && <p className="mt-1 text-xs text-red-300">{replyError}</p>}
+          {replyError && <p className="mt-1 text-xs text-red-400">{replyError}</p>}
           <div className="mt-2 flex justify-end">
             <button
               type="submit"
               disabled={isPending || replyBody.trim().length === 0}
-              className="rounded bg-[#7c3aed] px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-[#8b5cf6] disabled:opacity-50"
+              className="rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-violet-500 disabled:opacity-50"
             >
               {isPending ? 'Saving…' : 'Reply'}
             </button>
@@ -1235,17 +1240,17 @@ function ThreadView({
       {/* actions row — only for workspace members who can manage comments */}
       {canManageComments && (
         <>
-          {actionError && <p className="text-xs text-red-300">{actionError}</p>}
+          {actionError && <p className="text-xs text-red-400">{actionError}</p>}
           <div className="flex items-center gap-2 border-t border-white/[0.06] pt-3">
             <button
               type="button"
               onClick={() => onStatus(comment, isResolved ? 'open' : 'resolved')}
               disabled={isPending}
               className={[
-                'inline-flex items-center gap-1.5 rounded border px-2.5 py-1.5 text-xs font-semibold transition disabled:opacity-50',
+                'inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition disabled:opacity-50',
                 isResolved
-                  ? 'border-white/10 text-slate-400 hover:bg-white/5 hover:text-white'
-                  : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200 hover:bg-emerald-500/20',
+                  ? 'border-white/[0.08] text-slate-500 hover:bg-white/[0.05] hover:text-slate-200'
+                  : 'border-emerald-500/25 bg-emerald-500/8 text-emerald-300 hover:bg-emerald-500/15',
               ].join(' ')}
             >
               {isResolved ? (
@@ -1266,10 +1271,10 @@ function ThreadView({
               onClick={() => onPinned(comment)}
               disabled={isPending}
               className={[
-                'inline-flex items-center gap-1.5 rounded border px-2.5 py-1.5 text-xs font-semibold transition disabled:opacity-50',
+                'inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition disabled:opacity-50',
                 comment.isPinned
-                  ? 'border-violet-400/30 bg-violet-400/10 text-violet-200 hover:bg-violet-400/20'
-                  : 'border-white/10 text-slate-400 hover:bg-white/5 hover:text-white',
+                  ? 'border-violet-500/30 bg-violet-500/10 text-violet-300 hover:bg-violet-500/18'
+                  : 'border-white/[0.08] text-slate-500 hover:bg-white/[0.05] hover:text-slate-200',
               ].join(' ')}
             >
               <Pin className="h-3 w-3" />
@@ -1280,7 +1285,7 @@ function ThreadView({
               type="button"
               onClick={() => onDelete(comment)}
               disabled={isPending}
-              className="ml-auto inline-flex h-7 w-7 items-center justify-center rounded border border-white/10 text-slate-500 transition hover:bg-red-400/10 hover:text-red-300 disabled:opacity-50"
+              className="ml-auto inline-flex h-7 w-7 items-center justify-center rounded-lg border border-white/[0.08] text-slate-600 transition hover:bg-red-500/10 hover:text-red-400 disabled:opacity-50"
               aria-label="Delete comment"
             >
               <Trash2 className="h-3.5 w-3.5" />
@@ -1319,16 +1324,18 @@ function CommentList({
 
   if (comments.length === 0) {
     const emptyMessages: Record<CommentFilter, string> = {
-      open: canComment ? 'No open comments yet. Click + to leave a note.' : 'No open comments yet.',
-      resolved: 'No resolved comments.',
-      all: canComment ? 'No comments yet. Click + to leave the first note.' : 'No comments yet.',
+      open: canComment
+        ? 'No open notes yet. Click a track lane or the ruler to pin a timestamped note.'
+        : 'No open notes yet.',
+      resolved: 'No resolved notes.',
+      all: canComment ? 'No notes yet. Click the timeline to pin the first one.' : 'No notes yet.',
     }
-    return <p className="text-sm leading-6 text-slate-500">{emptyMessages[filter]}</p>
+    return <p className="text-sm leading-relaxed text-slate-600">{emptyMessages[filter]}</p>
   }
 
   return (
     <div ref={listRef} className="space-y-2">
-      {actionError && <p className="text-xs text-red-300">{actionError}</p>}
+      {actionError && <p className="text-xs text-red-400">{actionError}</p>}
       {comments.map((comment) => {
         const isSelected = selectedCommentId === comment.id
         const isResolved = comment.status === 'resolved'
@@ -1338,10 +1345,10 @@ function CommentList({
             data-comment-id={comment.id}
             onClick={() => onSelect(comment.id)}
             className={[
-              'cursor-pointer rounded border p-3 transition',
+              'cursor-pointer rounded-xl border p-3.5 transition',
               isSelected
-                ? 'border-violet-400/40 bg-violet-400/8 ring-1 ring-violet-400/20'
-                : 'border-white/10 bg-white/[0.025] hover:border-white/20 hover:bg-white/[0.045]',
+                ? 'border-violet-500/35 bg-violet-500/8 ring-1 ring-violet-500/20'
+                : 'border-white/[0.08] bg-white/[0.02] hover:border-white/[0.14] hover:bg-white/[0.04]',
             ].join(' ')}
           >
             <div className="flex gap-2.5">
@@ -1352,36 +1359,32 @@ function CommentList({
                     <p className="truncate text-xs font-semibold text-slate-200">
                       {comment.authorName}
                     </p>
-                    <div className="mt-0.5 flex items-center gap-1.5 text-[10px] text-slate-500">
-                      <span className="rounded bg-white/[0.06] px-1 py-0.5 font-medium">
+                    <div className="mt-0.5 flex flex-wrap items-center gap-1 text-[10px]">
+                      <span className="rounded-md bg-white/[0.06] px-1.5 py-0.5 font-medium text-slate-500">
                         {comment.trackName ?? 'Project'}
                       </span>
-                      <span>·</span>
-                      <span>{formatTime(comment.timestampSeconds)}</span>
-                      {comment.isPinned && (
-                        <>
-                          <span>·</span>
-                          <Pin className="h-2.5 w-2.5 text-violet-400" />
-                        </>
-                      )}
+                      <span className="font-mono text-violet-500">
+                        @ {formatTime(comment.timestampSeconds)}
+                      </span>
+                      {comment.isPinned && <Pin className="h-2.5 w-2.5 text-violet-400" />}
                     </div>
                   </div>
-                  <p className="shrink-0 text-[10px] text-slate-600">
+                  <p className="shrink-0 text-[10px] text-slate-700">
                     {formatRelativeDate(comment.createdAt)}
                   </p>
                 </div>
                 <p
                   className={[
-                    'mt-1.5 line-clamp-2 text-sm leading-5',
-                    isResolved ? 'text-slate-500' : 'text-slate-200',
+                    'mt-2 line-clamp-2 text-sm leading-5',
+                    isResolved ? 'text-slate-600' : 'text-slate-300',
                   ].join(' ')}
                 >
                   {comment.body}
                 </p>
                 {(comment.replies.length > 0 || isResolved) && (
-                  <div className="mt-1.5 flex items-center gap-2.5">
+                  <div className="mt-2 flex items-center gap-2.5">
                     {comment.replies.length > 0 && (
-                      <span className="text-[10px] text-slate-500">
+                      <span className="text-[10px] text-slate-600">
                         {comment.replies.length}{' '}
                         {comment.replies.length === 1 ? 'reply' : 'replies'}
                       </span>
@@ -1412,10 +1415,10 @@ interface VersionListProps {
 function VersionList({ versions, canManageVersions, onSelect }: VersionListProps) {
   if (versions.length === 0) {
     return (
-      <p className="text-sm leading-6 text-slate-500">
+      <p className="text-sm leading-relaxed text-slate-600">
         {canManageVersions
-          ? 'No versions saved yet. Click “Save Version” to capture the current state.'
-          : 'No versions saved yet.'}
+          ? 'No revisions saved yet. Click "Save revision" to snapshot the current state.'
+          : 'No revisions saved yet.'}
       </p>
     )
   }
@@ -1426,7 +1429,7 @@ function VersionList({ versions, canManageVersions, onSelect }: VersionListProps
         <article
           key={v.id}
           onClick={() => onSelect(v.id)}
-          className="cursor-pointer rounded border border-white/10 bg-white/[0.025] p-3 transition hover:border-white/20 hover:bg-white/[0.045]"
+          className="cursor-pointer rounded-xl border border-white/[0.08] bg-white/[0.02] p-3.5 transition hover:border-white/[0.14] hover:bg-white/[0.04]"
         >
           <div className="flex items-start gap-2.5">
             <CommentAvatar name={v.creatorName} />
@@ -1434,16 +1437,16 @@ function VersionList({ versions, canManageVersions, onSelect }: VersionListProps
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
                   <p className="truncate text-xs font-semibold text-slate-200">{v.name}</p>
-                  <p className="mt-0.5 text-[10px] text-slate-500">
-                    v{versions.length - idx} · {v.creatorName}
+                  <p className="mt-0.5 text-[10px] text-slate-600">
+                    rev {versions.length - idx} · {v.creatorName}
                   </p>
                 </div>
-                <p className="shrink-0 text-[10px] text-slate-600">
+                <p className="shrink-0 text-[10px] text-slate-700">
                   {formatRelativeTime(v.createdAt)}
                 </p>
               </div>
               {v.description && (
-                <p className="mt-1.5 line-clamp-2 text-sm leading-5 text-slate-400">
+                <p className="mt-1.5 line-clamp-2 text-sm leading-5 text-slate-500">
                   {v.description}
                 </p>
               )}
@@ -1500,26 +1503,27 @@ function VersionDetail({
               type="button"
               onClick={onRestoreClick}
               disabled={isPending}
-              className="w-full rounded border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs font-semibold text-amber-200 transition hover:bg-amber-500/20 disabled:opacity-50"
+              className="w-full rounded-xl border border-amber-500/25 bg-amber-500/8 px-3 py-2.5 text-xs font-semibold text-amber-300 transition hover:bg-amber-500/15 disabled:opacity-50"
             >
-              Restore this version
+              <RotateCcw className="mr-1.5 inline h-3 w-3" />
+              Restore this revision
             </button>
           ) : (
-            <div className="rounded border border-amber-500/30 bg-amber-500/8 p-3">
-              <p className="text-xs font-semibold text-amber-200">
+            <div className="rounded-xl border border-amber-500/25 bg-amber-500/6 p-4">
+              <p className="text-sm font-semibold text-amber-200">
                 Restore &ldquo;{version.name}&rdquo;?
               </p>
-              <p className="mt-1.5 text-xs leading-4 text-slate-400">
-                Track mix settings will be updated to match this snapshot. A safety backup of the
-                current state will be saved automatically first.
+              <p className="mt-2 text-xs leading-relaxed text-slate-500">
+                Mix settings will be restored to this snapshot. Your current state is automatically
+                saved as a backup first — nothing is lost.
               </p>
-              {restoreError && <p className="mt-2 text-xs text-red-300">{restoreError}</p>}
-              <div className="mt-3 flex items-center gap-2">
+              {restoreError && <p className="mt-2 text-xs text-red-400">{restoreError}</p>}
+              <div className="mt-4 flex items-center gap-2">
                 <button
                   type="button"
                   onClick={onRestoreCancel}
                   disabled={isPending}
-                  className="flex-1 rounded border border-white/10 px-3 py-1.5 text-xs font-semibold text-slate-400 transition hover:bg-white/5 hover:text-white disabled:opacity-50"
+                  className="flex-1 rounded-lg border border-white/[0.08] px-3 py-1.5 text-xs font-semibold text-slate-500 transition hover:bg-white/[0.05] hover:text-slate-200 disabled:opacity-50"
                 >
                   Cancel
                 </button>
@@ -1527,7 +1531,7 @@ function VersionDetail({
                   type="button"
                   onClick={onRestoreConfirm}
                   disabled={isPending}
-                  className="flex-1 rounded bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-amber-500 disabled:opacity-50"
+                  className="flex-1 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-amber-500 disabled:opacity-50"
                 >
                   {isPending ? 'Restoring…' : 'Confirm restore'}
                 </button>
@@ -1604,9 +1608,8 @@ interface ActivityFeedProps {
 function ActivityFeed({ activity, onSelectComment, onSelectVersion }: ActivityFeedProps) {
   if (activity.length === 0) {
     return (
-      <p className="text-sm leading-6 text-slate-500">
-        No activity yet. Actions like uploading tracks, leaving comments, and saving versions will
-        appear here.
+      <p className="text-sm leading-relaxed text-slate-600">
+        No activity yet. Uploads, notes, and saved revisions will appear here.
       </p>
     )
   }

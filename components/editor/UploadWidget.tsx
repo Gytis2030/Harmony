@@ -174,8 +174,10 @@ export function UploadWidget({ projectId, onTrackCreated }: Props) {
         onDrop={handleDrop}
         onClick={() => !isUploading && idle && inputRef.current?.click()}
         className={[
-          'flex min-h-[68px] items-center justify-between gap-4 rounded-md border border-dashed px-4 py-3 transition-colors',
-          isDragOver ? 'border-[#7c3aed] bg-[#7c3aed]/15' : 'border-white/15 bg-white/[0.03]',
+          'flex min-h-[72px] items-center justify-between gap-4 rounded-xl border border-dashed px-4 py-3 transition-all',
+          isDragOver
+            ? 'border-violet-500/60 bg-violet-500/10 shadow-[inset_0_0_0_1px_rgba(124,58,237,0.2)]'
+            : 'border-white/[0.1] bg-white/[0.02] hover:border-white/[0.18] hover:bg-white/[0.04]',
           !isUploading && idle ? 'cursor-pointer' : '',
         ].join(' ')}
       >
@@ -192,21 +194,18 @@ export function UploadWidget({ projectId, onTrackCreated }: Props) {
         {idle && (
           <>
             <div className="flex min-w-0 items-center gap-3">
-              <div className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded border border-white/10 bg-black/30 text-slate-300">
-                <Upload className="h-4 w-4" />
+              <div className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-white/[0.1] bg-white/[0.04] text-slate-400">
+                <Upload className="h-3.5 w-3.5" />
               </div>
               <div className="min-w-0">
-                <p className="truncate text-sm font-medium text-slate-200">
-                  Drop WAV or MP3 stems here, or click to browse
+                <p className="text-xs font-medium text-slate-300">
+                  Drop WAV or MP3 stems, or click to browse
                 </p>
-                <p className="mt-1 text-xs text-slate-500">
-                  Multiple files supported · Max 100 MB each
+                <p className="mt-0.5 text-[11px] text-slate-600">
+                  Multiple files · Max 100 MB each · WAV recommended
                 </p>
               </div>
             </div>
-            <span className="hidden rounded border border-white/10 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-slate-400 sm:inline-flex">
-              Upload
-            </span>
           </>
         )}
 
@@ -273,9 +272,9 @@ export function UploadWidget({ projectId, onTrackCreated }: Props) {
         <button
           type="button"
           onClick={handleReset}
-          className="mt-2 text-xs text-slate-500 transition hover:text-slate-300"
+          className="mt-2 text-[11px] text-slate-600 transition hover:text-slate-300"
         >
-          Upload more stems
+          Upload more stems →
         </button>
       )}
     </div>

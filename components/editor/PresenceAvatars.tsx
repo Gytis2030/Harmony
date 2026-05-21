@@ -36,20 +36,17 @@ export default function PresenceAvatars({ className = '', maxVisible = 3 }: Pres
 
   return (
     <div className={`flex items-center gap-2 ${className}`}>
-      <div className="hidden text-right text-xs text-slate-500 sm:block">
-        <p className="font-medium uppercase tracking-wide text-slate-400">
-          {totalOnline === 1 ? 'Just you' : 'Collaborators'}
-        </p>
-        <p>{totalOnline === 1 ? 'Online' : `${totalOnline} online`}</p>
-      </div>
+      {totalOnline > 1 && (
+        <span className="hidden text-xs text-slate-600 sm:block">{totalOnline} online</span>
+      )}
 
-      <div className="flex -space-x-2">
+      <div className="flex -space-x-1.5">
         {visibleOthers.map((other) => (
           <AvatarCircle key={other.info.id} name={other.info.name} color={other.info.color} />
         ))}
 
         {overflow > 0 && (
-          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#1c1c2a] text-[10px] font-semibold text-slate-400 ring-2 ring-[#0c0c12]">
+          <div className="flex h-7 w-7 items-center justify-center rounded-full bg-[#1a1d2a] text-[9px] font-semibold text-slate-400 ring-2 ring-[#0a0b12]">
             +{overflow}
           </div>
         )}
@@ -72,10 +69,10 @@ function AvatarCircle({ name, color, isSelf = false }: AvatarCircleProps) {
     <div
       title={name}
       className={[
-        'flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white',
+        'flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white',
         isSelf
-          ? 'ring-2 ring-white/30 ring-offset-1 ring-offset-[#0c0c12]'
-          : 'ring-2 ring-[#0c0c12]',
+          ? 'ring-2 ring-white/20 ring-offset-1 ring-offset-[#0a0b12]'
+          : 'ring-2 ring-[#0a0b12]',
       ].join(' ')}
       style={{ backgroundColor: color }}
     >

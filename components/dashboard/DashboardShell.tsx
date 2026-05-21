@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from 'react'
 import Link from 'next/link'
-import { Search, Archive, MoreHorizontal, Music2, Clock, Activity } from 'lucide-react'
+import { Search, Archive, MoreHorizontal, Clock, Activity, Layers, FolderOpen } from 'lucide-react'
 import { archiveProject } from '@/lib/actions/projects'
 
 export type DashboardProject = {
@@ -44,16 +44,16 @@ function formatRelativeDate(iso: string): string {
 }
 
 const ROLE_BADGE: Record<string, string> = {
-  owner: 'bg-violet-500/15 text-violet-300 ring-1 ring-violet-500/20',
-  editor: 'bg-blue-500/15 text-blue-300 ring-1 ring-blue-500/20',
-  commenter: 'bg-amber-500/15 text-amber-300 ring-1 ring-amber-500/20',
-  viewer: 'bg-slate-500/15 text-slate-400 ring-1 ring-slate-500/20',
+  owner: 'bg-violet-500/12 text-violet-300 ring-1 ring-violet-500/20',
+  editor: 'bg-blue-500/12 text-blue-300 ring-1 ring-blue-500/20',
+  commenter: 'bg-amber-500/12 text-amber-300 ring-1 ring-amber-500/20',
+  viewer: 'bg-slate-500/12 text-slate-400 ring-1 ring-slate-500/15',
 }
 
 function RoleBadge({ role }: { role: string }) {
   return (
     <span
-      className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium capitalize ${ROLE_BADGE[role] ?? ROLE_BADGE.viewer}`}
+      className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium capitalize ${ROLE_BADGE[role] ?? ROLE_BADGE.viewer}`}
     >
       {role}
     </span>
@@ -65,7 +65,7 @@ function formatActivityLabel(type: string, metadata: Record<string, unknown> | n
     case 'track.uploaded':
       return `uploaded ${typeof metadata?.trackName === 'string' ? `"${metadata.trackName}"` : 'a stem'}`
     case 'comment.created':
-      return 'added a comment'
+      return 'left a timestamped note'
     case 'comment.replied':
       return 'replied to a comment'
     case 'comment.resolved':
@@ -73,9 +73,9 @@ function formatActivityLabel(type: string, metadata: Record<string, unknown> | n
     case 'comment.reopened':
       return 'reopened a comment'
     case 'version.created':
-      return `created version${typeof metadata?.versionName === 'string' ? ` "${metadata.versionName}"` : ''}`
+      return `saved revision${typeof metadata?.versionName === 'string' ? ` "${metadata.versionName}"` : ''}`
     case 'version.restored':
-      return 'restored a version'
+      return 'restored a revision'
     case 'share_link.created':
       return 'created a share link'
     case 'share_link.accessed':
@@ -87,19 +87,21 @@ function formatActivityLabel(type: string, metadata: Record<string, unknown> | n
 
 const WAVEFORM_HEIGHTS = [0.4, 0.7, 0.9, 0.6, 1.0, 0.8, 0.5, 0.7, 0.9, 0.6]
 
-function MiniWaveform() {
+function MiniWaveform({ color = '#7c3aed' }: { color?: string }) {
   return (
-    <div className="flex shrink-0 items-end gap-px" style={{ width: 28, height: 20 }}>
+    <div className="flex shrink-0 items-end gap-px" style={{ width: 28, height: 18 }}>
       {WAVEFORM_HEIGHTS.map((h, i) => (
         <div
           key={i}
-          className="flex-1 rounded-sm bg-violet-500/40"
-          style={{ height: `${h * 100}%` }}
+          className="flex-1 rounded-sm opacity-50"
+          style={{ height: `${h * 100}%`, backgroundColor: color }}
         />
       ))}
     </div>
   )
 }
+
+const WAVEFORM_COLORS = ['#7c3aed', '#06b6d4', '#10b981', '#f59e0b', '#ec4899', '#f97316']
 
 function ProjectActionMenu({ id, name }: { id: string; name: string }) {
   const [open, setOpen] = useState(false)
@@ -127,7 +129,7 @@ function ProjectActionMenu({ id, name }: { id: string; name: string }) {
         type="button"
         onClick={() => setOpen((v) => !v)}
         disabled={isPending}
-        className="inline-flex h-7 w-7 items-center justify-center rounded text-slate-600 transition hover:bg-white/5 hover:text-slate-300 disabled:opacity-50"
+        className="inline-flex h-7 w-7 items-center justify-center rounded text-slate-600 transition hover:bg-white/[0.06] hover:text-slate-300 disabled:opacity-50"
         aria-label="Project options"
       >
         <MoreHorizontal className="h-4 w-4" />
@@ -136,14 +138,14 @@ function ProjectActionMenu({ id, name }: { id: string; name: string }) {
       {open && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 top-8 z-50 min-w-[9rem] rounded-lg border border-white/10 bg-[#1a1a2e] py-1 shadow-xl">
+          <div className="absolute right-0 top-8 z-50 min-w-[9rem] overflow-hidden rounded-xl border border-white/[0.1] bg-[#141924] py-1 shadow-2xl">
             <button
               type="button"
               onClick={handleArchive}
-              className="flex w-full items-center gap-2 px-3 py-2 text-sm text-slate-300 hover:bg-white/5 hover:text-white"
+              className="flex w-full items-center gap-2 px-3 py-2 text-sm text-slate-300 hover:bg-white/[0.05] hover:text-white"
             >
-              <Archive className="h-4 w-4 text-slate-500" />
-              Archive
+              <Archive className="h-3.5 w-3.5 text-slate-500" />
+              Archive room
             </button>
           </div>
         </>
@@ -174,10 +176,54 @@ export default function DashboardShell({ allProjects, activity, currentUserId }:
   const totalStems = allProjects.reduce((s, p) => s + p.stemCount, 0)
 
   const stats = [
-    { label: 'Total projects', value: allProjects.length },
-    { label: 'My projects', value: allProjects.filter((p) => p.isOwned).length },
-    { label: 'Shared with me', value: allProjects.filter((p) => !p.isOwned).length },
-    { label: 'Total stems', value: totalStems },
+    {
+      label: 'Project rooms',
+      value: allProjects.length,
+      icon: <FolderOpen className="h-4 w-4 text-violet-400" />,
+    },
+    {
+      label: 'Owned by me',
+      value: allProjects.filter((p) => p.isOwned).length,
+      icon: <Layers className="h-4 w-4 text-cyan-400" />,
+    },
+    {
+      label: 'Shared with me',
+      value: allProjects.filter((p) => !p.isOwned).length,
+      icon: (
+        <svg
+          className="h-4 w-4 text-amber-400"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={1.6}
+          viewBox="0 0 24 24"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"
+          />
+        </svg>
+      ),
+    },
+    {
+      label: 'Total stems',
+      value: totalStems,
+      icon: (
+        <svg
+          className="h-4 w-4 text-emerald-400"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={1.6}
+          viewBox="0 0 24 24"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"
+          />
+        </svg>
+      ),
+    },
   ]
 
   return (
@@ -187,44 +233,49 @@ export default function DashboardShell({ allProjects, activity, currentUserId }:
         {stats.map((stat) => (
           <div
             key={stat.label}
-            className="rounded-xl border border-white/10 bg-[#0f0f1a] px-4 py-3"
+            className="rounded-2xl border border-white/[0.07] bg-[#0d1018] px-5 py-4"
           >
-            <p className="text-2xl font-semibold tabular-nums text-slate-100">{stat.value}</p>
+            <div className="mb-3 flex h-8 w-8 items-center justify-center rounded-lg border border-white/[0.07] bg-white/[0.03]">
+              {stat.icon}
+            </div>
+            <p className="text-2xl font-bold tabular-nums text-slate-100">{stat.value}</p>
             <p className="mt-0.5 text-xs text-slate-500">{stat.label}</p>
           </div>
         ))}
       </div>
 
-      {/* Search + tab filter */}
+      {/* Search + filter */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="relative max-w-xs flex-1">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-600" />
           <input
             type="text"
-            placeholder="Search projects…"
+            placeholder="Search rooms…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full rounded-lg border border-white/10 bg-white/5 py-2 pl-9 pr-3 text-sm text-slate-100 placeholder-slate-500 focus:border-violet-500/50 focus:outline-none focus:ring-1 focus:ring-violet-500/50"
+            className="w-full rounded-xl border border-white/[0.08] bg-white/[0.04] py-2.5 pl-9 pr-3 text-sm text-slate-100 placeholder-slate-600 focus:border-violet-500/40 focus:outline-none focus:ring-1 focus:ring-violet-500/30"
           />
         </div>
         <div className="flex items-center gap-2">
-          <div className="flex gap-1 rounded-lg border border-white/10 bg-white/5 p-1">
+          <div className="flex gap-0.5 rounded-xl border border-white/[0.08] bg-white/[0.03] p-1">
             {(['all', 'mine', 'shared'] as const).map((t) => (
               <button
                 key={t}
                 type="button"
                 onClick={() => setTab(t)}
-                className={`rounded-md px-3 py-1 text-xs font-medium transition ${
-                  tab === t ? 'bg-violet-600 text-white' : 'text-slate-400 hover:text-slate-200'
+                className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${
+                  tab === t
+                    ? 'bg-violet-600 text-white shadow-sm'
+                    : 'text-slate-500 hover:text-slate-200'
                 }`}
               >
-                {t === 'all' ? 'All' : t === 'mine' ? 'Owned by me' : 'Shared'}
+                {t === 'all' ? 'All' : t === 'mine' ? 'Owned' : 'Shared'}
               </button>
             ))}
           </div>
           <a
             href="#activity"
-            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 text-xs font-medium text-slate-400 transition hover:border-white/20 hover:text-slate-200"
+            className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 text-xs font-medium text-slate-500 transition hover:border-white/[0.14] hover:text-slate-300"
           >
             <Activity className="h-3.5 w-3.5" />
             Activity
@@ -235,27 +286,27 @@ export default function DashboardShell({ allProjects, activity, currentUserId }:
       {/* Recent section */}
       {recent.length > 0 && (
         <section>
-          <h2 className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-slate-500">
+          <h2 className="mb-3 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-widest text-slate-600">
             <Clock className="h-3.5 w-3.5" />
             Recent
           </h2>
-          <div className="overflow-hidden rounded-xl border border-white/10 bg-[#0f0f1a]">
+          <div className="overflow-hidden rounded-2xl border border-white/[0.07] bg-[#0d1018]">
             {recent.map((p, idx) => (
               <Link
                 key={p.id}
                 href={`/projects/${p.id}`}
-                className={`flex items-center gap-4 px-5 py-3.5 transition hover:bg-white/5 ${idx !== 0 ? 'border-t border-white/5' : ''}`}
+                className={`flex items-center gap-4 px-5 py-4 transition hover:bg-white/[0.04] ${idx !== 0 ? 'border-t border-white/[0.05]' : ''}`}
               >
-                <MiniWaveform />
-                <span className="min-w-0 flex-1 truncate text-sm font-medium text-slate-100">
+                <MiniWaveform color={WAVEFORM_COLORS[idx % WAVEFORM_COLORS.length]} />
+                <span className="min-w-0 flex-1 truncate text-sm font-medium text-slate-200">
                   {p.name}
                 </span>
                 <div className="hidden items-center gap-4 sm:flex">
                   <RoleBadge role={p.role} />
-                  <span className="w-14 text-right text-xs text-slate-500">
+                  <span className="w-16 text-right font-mono text-xs tabular-nums text-slate-600">
                     {p.stemCount === 1 ? '1 stem' : `${p.stemCount} stems`}
                   </span>
-                  <span className="w-20 text-right text-xs text-slate-500">
+                  <span className="w-20 text-right text-xs text-slate-600">
                     {formatRelativeDate(p.updatedAt)}
                   </span>
                 </div>
@@ -265,33 +316,37 @@ export default function DashboardShell({ allProjects, activity, currentUserId }:
         </section>
       )}
 
-      {/* My Projects table */}
+      {/* My rooms table */}
       {(tab === 'all' || tab === 'mine') && (
         <section>
-          <h2 className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-slate-500">
-            <Music2 className="h-3.5 w-3.5" />
-            My Projects
+          <h2 className="mb-3 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-widest text-slate-600">
+            <FolderOpen className="h-3.5 w-3.5" />
+            My rooms
           </h2>
           {myProjects.length === 0 ? (
-            <div className="rounded-xl border border-white/10 bg-[#0f0f1a] px-6 py-10 text-center">
-              <p className="text-sm text-slate-500">
+            <div className="rounded-2xl border border-white/[0.07] bg-[#0d1018] px-6 py-12 text-center">
+              <p className="text-sm text-slate-600">
                 {search
-                  ? `No owned projects match "${search}".`
-                  : 'You have no projects yet. Create one to get started.'}
+                  ? `No rooms match "${search}".`
+                  : 'You have no rooms yet. Create one to get started.'}
               </p>
             </div>
           ) : (
-            <div className="overflow-hidden rounded-xl border border-white/10 bg-[#0f0f1a]">
+            <div className="overflow-hidden rounded-2xl border border-white/[0.07] bg-[#0d1018]">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-white/8">
-                    <th className="px-5 py-3 text-left text-xs font-medium text-slate-500">Name</th>
-                    <th className="px-3 py-3 text-left text-xs font-medium text-slate-500">Role</th>
-                    <th className="hidden px-3 py-3 text-right text-xs font-medium text-slate-500 sm:table-cell">
+                  <tr className="border-b border-white/[0.06]">
+                    <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-widest text-slate-600">
+                      Room
+                    </th>
+                    <th className="px-3 py-3 text-left text-[11px] font-semibold uppercase tracking-widest text-slate-600">
+                      Role
+                    </th>
+                    <th className="hidden px-3 py-3 text-right text-[11px] font-semibold uppercase tracking-widest text-slate-600 sm:table-cell">
                       Stems
                     </th>
-                    <th className="hidden px-3 py-3 text-right text-xs font-medium text-slate-500 sm:table-cell">
-                      Last updated
+                    <th className="hidden px-3 py-3 text-right text-[11px] font-semibold uppercase tracking-widest text-slate-600 sm:table-cell">
+                      Updated
                     </th>
                     <th className="w-10 px-3 py-3" />
                   </tr>
@@ -300,26 +355,26 @@ export default function DashboardShell({ allProjects, activity, currentUserId }:
                   {myProjects.map((p, idx) => (
                     <tr
                       key={p.id}
-                      className={`group transition hover:bg-white/5 ${idx !== 0 ? 'border-t border-white/5' : ''}`}
+                      className={`group transition hover:bg-white/[0.04] ${idx !== 0 ? 'border-t border-white/[0.04]' : ''}`}
                     >
-                      <td className="max-w-0 px-5 py-3.5">
+                      <td className="max-w-0 px-5 py-4">
                         <Link
                           href={`/projects/${p.id}`}
-                          className="block truncate font-medium text-slate-100 hover:text-violet-300"
+                          className="block truncate font-medium text-slate-200 transition hover:text-violet-300"
                         >
                           {p.name}
                         </Link>
                       </td>
-                      <td className="px-3 py-3.5">
+                      <td className="px-3 py-4">
                         <RoleBadge role={p.role} />
                       </td>
-                      <td className="hidden px-3 py-3.5 text-right text-xs text-slate-500 sm:table-cell">
+                      <td className="hidden px-3 py-4 text-right font-mono text-xs tabular-nums text-slate-600 sm:table-cell">
                         {p.stemCount}
                       </td>
-                      <td className="hidden px-3 py-3.5 text-right text-xs text-slate-500 sm:table-cell">
+                      <td className="hidden px-3 py-4 text-right text-xs text-slate-600 sm:table-cell">
                         {formatRelativeDate(p.updatedAt)}
                       </td>
-                      <td className="px-3 py-3.5 text-right">
+                      <td className="px-3 py-4 text-right">
                         <ProjectActionMenu id={p.id} name={p.name} />
                       </td>
                     </tr>
@@ -331,37 +386,39 @@ export default function DashboardShell({ allProjects, activity, currentUserId }:
         </section>
       )}
 
-      {/* Shared with me table */}
+      {/* Shared rooms table */}
       {(tab === 'all' || tab === 'shared') && (
         <section>
-          <h2 className="mb-3 text-xs font-semibold uppercase tracking-widest text-slate-500">
+          <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-widest text-slate-600">
             Shared with me
           </h2>
           {sharedProjects.length === 0 ? (
-            <div className="rounded-xl border border-white/10 bg-[#0f0f1a] px-6 py-10 text-center">
-              <p className="text-sm text-slate-500">
+            <div className="rounded-2xl border border-white/[0.07] bg-[#0d1018] px-6 py-12 text-center">
+              <p className="text-sm text-slate-600">
                 {search
-                  ? `No shared projects match "${search}".`
-                  : 'Projects shared with you will appear here.'}
+                  ? `No shared rooms match "${search}".`
+                  : 'Rooms shared with you will appear here.'}
               </p>
             </div>
           ) : (
-            <div className="overflow-hidden rounded-xl border border-white/10 bg-[#0f0f1a]">
+            <div className="overflow-hidden rounded-2xl border border-white/[0.07] bg-[#0d1018]">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-white/8">
-                    <th className="px-5 py-3 text-left text-xs font-medium text-slate-500">Name</th>
-                    <th className="hidden px-3 py-3 text-left text-xs font-medium text-slate-500 sm:table-cell">
+                  <tr className="border-b border-white/[0.06]">
+                    <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-widest text-slate-600">
+                      Room
+                    </th>
+                    <th className="hidden px-3 py-3 text-left text-[11px] font-semibold uppercase tracking-widest text-slate-600 sm:table-cell">
                       Owner
                     </th>
-                    <th className="px-3 py-3 text-left text-xs font-medium text-slate-500">
+                    <th className="px-3 py-3 text-left text-[11px] font-semibold uppercase tracking-widest text-slate-600">
                       Your role
                     </th>
-                    <th className="hidden px-3 py-3 text-right text-xs font-medium text-slate-500 sm:table-cell">
+                    <th className="hidden px-3 py-3 text-right text-[11px] font-semibold uppercase tracking-widest text-slate-600 sm:table-cell">
                       Stems
                     </th>
-                    <th className="hidden px-3 py-3 text-right text-xs font-medium text-slate-500 sm:table-cell">
-                      Last updated
+                    <th className="hidden px-3 py-3 text-right text-[11px] font-semibold uppercase tracking-widest text-slate-600 sm:table-cell">
+                      Updated
                     </th>
                   </tr>
                 </thead>
@@ -369,26 +426,26 @@ export default function DashboardShell({ allProjects, activity, currentUserId }:
                   {sharedProjects.map((p, idx) => (
                     <tr
                       key={p.id}
-                      className={`group transition hover:bg-white/5 ${idx !== 0 ? 'border-t border-white/5' : ''}`}
+                      className={`group transition hover:bg-white/[0.04] ${idx !== 0 ? 'border-t border-white/[0.04]' : ''}`}
                     >
-                      <td className="max-w-0 px-5 py-3.5">
+                      <td className="max-w-0 px-5 py-4">
                         <Link
                           href={`/projects/${p.id}`}
-                          className="block truncate font-medium text-slate-100 hover:text-violet-300"
+                          className="block truncate font-medium text-slate-200 transition hover:text-violet-300"
                         >
                           {p.name}
                         </Link>
                       </td>
-                      <td className="hidden px-3 py-3.5 text-xs text-slate-400 sm:table-cell">
+                      <td className="hidden px-3 py-4 text-xs text-slate-500 sm:table-cell">
                         {p.ownerName ?? '—'}
                       </td>
-                      <td className="px-3 py-3.5">
+                      <td className="px-3 py-4">
                         <RoleBadge role={p.role} />
                       </td>
-                      <td className="hidden px-3 py-3.5 text-right text-xs text-slate-500 sm:table-cell">
+                      <td className="hidden px-3 py-4 text-right font-mono text-xs tabular-nums text-slate-600 sm:table-cell">
                         {p.stemCount}
                       </td>
-                      <td className="hidden px-3 py-3.5 text-right text-xs text-slate-500 sm:table-cell">
+                      <td className="hidden px-3 py-4 text-right text-xs text-slate-600 sm:table-cell">
                         {formatRelativeDate(p.updatedAt)}
                       </td>
                     </tr>
@@ -402,18 +459,18 @@ export default function DashboardShell({ allProjects, activity, currentUserId }:
 
       {/* Recent Activity */}
       <section id="activity">
-        <h2 className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-slate-500">
+        <h2 className="mb-3 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-widest text-slate-600">
           <Activity className="h-3.5 w-3.5" />
-          Recent Activity
+          Recent activity
         </h2>
         {activity.length === 0 ? (
-          <div className="rounded-xl border border-white/10 bg-[#0f0f1a] px-6 py-8 text-center">
-            <p className="text-sm text-slate-500">
-              Activity will appear here as you and your collaborators work on projects.
+          <div className="rounded-2xl border border-white/[0.07] bg-[#0d1018] px-6 py-10 text-center">
+            <p className="text-sm text-slate-600">
+              Activity will appear here as you and your collaborators work on rooms.
             </p>
           </div>
         ) : (
-          <div className="overflow-hidden rounded-xl border border-white/10 bg-[#0f0f1a]">
+          <div className="overflow-hidden rounded-2xl border border-white/[0.07] bg-[#0d1018]">
             {activity.map((item, idx) => {
               const actorLabel =
                 item.actorUserId === currentUserId ? 'You' : (item.actorName ?? 'Someone')
@@ -421,22 +478,20 @@ export default function DashboardShell({ allProjects, activity, currentUserId }:
                 <Link
                   key={item.id}
                   href={`/projects/${item.projectId}`}
-                  className={`flex items-start gap-3 px-5 py-3.5 transition hover:bg-white/5 ${idx !== 0 ? 'border-t border-white/5' : ''}`}
+                  className={`flex items-start gap-3 px-5 py-4 transition hover:bg-white/[0.04] ${idx !== 0 ? 'border-t border-white/[0.04]' : ''}`}
                 >
-                  <div className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-violet-500/15">
-                    <span className="text-[10px] font-bold text-violet-400">
-                      {actorLabel[0]?.toUpperCase()}
-                    </span>
+                  <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-violet-500/10 text-violet-400">
+                    <span className="text-[11px] font-bold">{actorLabel[0]?.toUpperCase()}</span>
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm text-slate-300">
-                      <span className="font-medium text-slate-100">{actorLabel}</span>{' '}
+                    <p className="text-sm text-slate-400">
+                      <span className="font-medium text-slate-200">{actorLabel}</span>{' '}
                       {formatActivityLabel(item.type, item.metadata)}{' '}
-                      <span className="text-slate-500">in</span>{' '}
-                      <span className="text-slate-300">{item.projectName}</span>
+                      <span className="text-slate-600">in</span>{' '}
+                      <span className="text-slate-400">{item.projectName}</span>
                     </p>
                   </div>
-                  <span className="shrink-0 text-xs text-slate-600">
+                  <span className="shrink-0 pt-0.5 text-xs text-slate-700">
                     {formatRelativeDate(item.createdAt)}
                   </span>
                 </Link>

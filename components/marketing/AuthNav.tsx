@@ -7,10 +7,12 @@ export default function AuthNav() {
     <div className="flex items-center gap-3">
       <SignedOut>
         <SignInButton>
-          <button className="text-sm text-slate-300 transition hover:text-white">Sign in</button>
+          <button className="text-sm font-medium text-slate-400 transition hover:text-slate-100">
+            Sign in
+          </button>
         </SignInButton>
         <SignUpButton>
-          <button className="rounded-md bg-violet-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-violet-500">
+          <button className="rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-violet-500">
             Get started
           </button>
         </SignUpButton>
@@ -18,9 +20,9 @@ export default function AuthNav() {
       <SignedIn>
         <Link
           href="/dashboard"
-          className="rounded-md bg-violet-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-violet-500"
+          className="rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-violet-500"
         >
-          Go to Dashboard
+          Dashboard
         </Link>
         <UserButton afterSignOutUrl="/" />
       </SignedIn>
