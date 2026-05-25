@@ -8,6 +8,7 @@ import { getUserByClerkId } from '@/lib/db/queries/users'
 import {
   audioFiles,
   comments,
+  projectShareGrants,
   projectVersionTracks,
   projects,
   tracks,
@@ -63,8 +64,18 @@ export async function addTrack(params: {
     )
     .limit(1)
 
-  if (!membership || (membership.role !== 'owner' && membership.role !== 'editor')) {
-    throw new Error('Forbidden')
+  if (membership?.role !== 'owner' && membership?.role !== 'editor') {
+    const [grant] = await db
+      .select({ accessLevel: projectShareGrants.accessLevel })
+      .from(projectShareGrants)
+      .where(
+        and(
+          eq(projectShareGrants.projectId, params.projectId),
+          eq(projectShareGrants.userId, user.id)
+        )
+      )
+      .limit(1)
+    if (grant?.accessLevel !== 'edit') throw new Error('Forbidden')
   }
 
   // Use MAX(position)+1 so deleted tracks don't collapse the sequence.
@@ -151,8 +162,18 @@ export async function removeTrack(params: { trackId: string; projectId: string }
     )
     .limit(1)
 
-  if (!membership || (membership.role !== 'owner' && membership.role !== 'editor')) {
-    throw new Error('Forbidden')
+  if (membership?.role !== 'owner' && membership?.role !== 'editor') {
+    const [grant] = await db
+      .select({ accessLevel: projectShareGrants.accessLevel })
+      .from(projectShareGrants)
+      .where(
+        and(
+          eq(projectShareGrants.projectId, params.projectId),
+          eq(projectShareGrants.userId, user.id)
+        )
+      )
+      .limit(1)
+    if (grant?.accessLevel !== 'edit') throw new Error('Forbidden')
   }
 
   await db.transaction(async (tx) => {
@@ -209,8 +230,15 @@ export async function updateTrackMix(params: {
     )
     .limit(1)
 
-  if (!membership || (membership.role !== 'owner' && membership.role !== 'editor')) {
-    throw new Error('Forbidden')
+  if (membership?.role !== 'owner' && membership?.role !== 'editor') {
+    const [grant] = await db
+      .select({ accessLevel: projectShareGrants.accessLevel })
+      .from(projectShareGrants)
+      .where(
+        and(eq(projectShareGrants.projectId, row.projectId), eq(projectShareGrants.userId, user.id))
+      )
+      .limit(1)
+    if (grant?.accessLevel !== 'edit') throw new Error('Forbidden')
   }
 
   const values: Partial<typeof tracks.$inferInsert> = { updatedAt: new Date() }

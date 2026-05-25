@@ -185,25 +185,24 @@ export async function acceptInvite(token: string, redirectTo?: string): Promise<
 
   if (!existing) {
     const isProjectScoped =
-      invite.projectId !== null && (invite.role === 'viewer' || invite.role === 'commenter')
+      invite.projectId !== null &&
+      (invite.role === 'viewer' || invite.role === 'commenter' || invite.role === 'editor')
 
     await db.transaction(async (tx) => {
       if (isProjectScoped) {
         // Project-scoped invite: grant access to ONE project only, not the whole workspace.
-        // shareLinkId is nullable (migration 0009) so invite-based grants omit it.
+        const accessLevel =
+          invite.role === 'editor' ? 'edit' : invite.role === 'commenter' ? 'comment' : 'view'
         await tx
           .insert(projectShareGrants)
           .values({
             projectId: invite.projectId!,
             userId: user.id,
-            accessLevel: invite.role === 'commenter' ? 'comment' : 'view',
+            accessLevel,
           })
           .onConflictDoUpdate({
             target: [projectShareGrants.projectId, projectShareGrants.userId],
-            set: {
-              accessLevel: invite.role === 'commenter' ? 'comment' : 'view',
-              grantedAt: new Date(),
-            },
+            set: { accessLevel, grantedAt: new Date() },
           })
       } else {
         // Workspace-level invite (owner/editor): full workspace membership.

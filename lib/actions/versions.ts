@@ -9,6 +9,7 @@ import { getTracksForProject } from '@/lib/db/queries/tracks'
 import { recordActivity } from '@/lib/db/queries/activity'
 import {
   projects,
+  projectShareGrants,
   projectVersions,
   projectVersionTracks,
   tracks,
@@ -49,8 +50,25 @@ async function requireProjectMembership(projectId: string, userId: string) {
     )
     .limit(1)
 
-  if (!row) throw new Error('Forbidden')
-  return row
+  if (row) return row
+
+  // Fall back: project-scoped editor grant counts as membership with editor role.
+  const [grantRow] = await db
+    .select({ workspaceId: projects.workspaceId, name: projects.name })
+    .from(projects)
+    .innerJoin(projectShareGrants, eq(projectShareGrants.projectId, projects.id))
+    .where(
+      and(
+        eq(projects.id, projectId),
+        eq(projectShareGrants.userId, userId),
+        eq(projectShareGrants.accessLevel, 'edit'),
+        isNull(projects.deletedAt)
+      )
+    )
+    .limit(1)
+
+  if (!grantRow) throw new Error('Forbidden')
+  return { ...grantRow, role: 'editor' as const }
 }
 
 async function createVersionInternal(

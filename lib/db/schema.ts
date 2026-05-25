@@ -220,7 +220,7 @@ export const workspaceInvites = pgTable(
   ]
 )
 
-export const shareLinkAccessEnum = pgEnum('share_link_access', ['view', 'comment'])
+export const shareLinkAccessEnum = pgEnum('share_link_access', ['view', 'comment', 'edit'])
 
 export const projectShareLinks = pgTable(
   'project_share_links',

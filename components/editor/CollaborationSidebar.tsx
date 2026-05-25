@@ -24,7 +24,7 @@ import {
   type CommentDto,
   type CommentReplyDto,
 } from '@/lib/actions/comments'
-import { createInvite, revokeInvite, type InviteDto } from '@/lib/actions/invites'
+import { revokeInvite, type InviteDto } from '@/lib/actions/invites'
 import { removeMember, updateMemberRole } from '@/lib/actions/members'
 import {
   createShareLink,
@@ -94,7 +94,6 @@ interface Props {
   onCommentSelect: (commentId: string | null) => void
   onVersionCreated: (version: VersionDto) => void
   onRestoreComplete: (safetySnapshot: VersionDto, restoredTracks: RestoredTrackMix[]) => void
-  onInviteCreated: (invite: InviteDto) => void
   onInviteRevoked: (inviteId: string) => void
   onMemberRemoved: (userId: string) => void
   onMemberRoleChanged: (userId: string, role: WorkspaceMemberRole) => void
@@ -179,7 +178,6 @@ export default function CollaborationSidebar({
   onCommentSelect,
   onVersionCreated,
   onRestoreComplete,
-  onInviteCreated,
   onInviteRevoked,
   onMemberRemoved,
   onMemberRoleChanged,
@@ -234,13 +232,8 @@ export default function CollaborationSidebar({
   const [restoreError, setRestoreError] = useState<string | null>(null)
   const [isRestorePending, startRestoreTransition] = useTransition()
 
-  // Invite form state
-  const [inviteEmail, setInviteEmail] = useState('')
-  const [inviteRole, setInviteRole] = useState<WorkspaceMemberRole>('viewer')
-  const [inviteError, setInviteError] = useState<string | null>(null)
-  const [newInviteToken, setNewInviteToken] = useState<string | null>(null)
+  // Pending invite list state
   const [copiedToken, setCopiedToken] = useState<string | null>(null)
-  const [isInvitePending, startInviteTransition] = useTransition()
   const [isRevokePending, startRevokeTransition] = useTransition()
 
   // Member management state
@@ -256,7 +249,7 @@ export default function CollaborationSidebar({
 
   // Direct share-grant form state
   const [shareEmail, setShareEmail] = useState('')
-  const [shareRole, setShareRole] = useState<'viewer' | 'commenter'>('viewer')
+  const [shareRole, setShareRole] = useState<'viewer' | 'commenter' | 'editor'>('viewer')
   const [shareError, setShareError] = useState<string | null>(null)
   const [shareResult, setShareResult] = useState<
     { type: 'direct_grant'; name: string } | { type: 'invite_link'; token: string } | null
@@ -434,41 +427,12 @@ export default function CollaborationSidebar({
     })
   }
 
-  // ---- invite ----
-  function handleInviteSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    startInviteTransition(async () => {
-      setInviteError(null)
-      setNewInviteToken(null)
-      try {
-        // viewer/commenter invites are project-scoped so they don't grant access
-        // to all workspace projects — only the project they were invited from.
-        const scopedProjectId =
-          inviteRole === 'viewer' || inviteRole === 'commenter' ? projectId : undefined
-        const invite = await createInvite({
-          workspaceId,
-          email: inviteEmail,
-          role: inviteRole,
-          projectId: scopedProjectId,
-        })
-        onInviteCreated(invite)
-        setInviteEmail('')
-        setNewInviteToken(invite.token)
-      } catch (err) {
-        setInviteError(err instanceof Error ? err.message : 'Could not create invite.')
-      }
-    })
-  }
-
+  // ---- pending invite list ----
   function handleRevoke(inviteId: string) {
     startRevokeTransition(async () => {
       try {
         await revokeInvite({ inviteId })
         onInviteRevoked(inviteId)
-        if (newInviteToken) {
-          const revokedInvite = invites.find((i) => i.id === inviteId)
-          if (revokedInvite?.token === newInviteToken) setNewInviteToken(null)
-        }
       } catch {
         // silently ignore — UI state will stay until next refresh
       }
@@ -509,8 +473,6 @@ export default function CollaborationSidebar({
 
   const canInvite = currentUserRole === 'owner' || currentUserRole === 'editor'
   const canManageLinks = currentUserRole === 'owner' || currentUserRole === 'editor'
-  const invitableRoles: WorkspaceMemberRole[] =
-    currentUserRole === 'owner' ? ['editor', 'commenter', 'viewer'] : ['commenter', 'viewer']
 
   function handleCreateShareLink(accessLevel: 'view' | 'comment') {
     startShareLinkTransition(async () => {
@@ -943,17 +905,11 @@ export default function CollaborationSidebar({
                   currentUserRole={currentUserRole}
                   canInvite={canInvite}
                   canManageLinks={canManageLinks}
-                  invitableRoles={invitableRoles}
-                  inviteEmail={inviteEmail}
-                  inviteRole={inviteRole}
-                  inviteError={inviteError}
                   shareLinkError={shareLinkError}
                   memberActionError={memberActionError}
-                  newInviteToken={newInviteToken}
                   copiedToken={copiedToken}
                   newShareTokens={newShareTokens}
                   copiedShareLinkId={copiedShareLinkId}
-                  isInvitePending={isInvitePending}
                   isRevokePending={isRevokePending}
                   isShareLinkPending={isShareLinkPending}
                   isShareRevokePending={isShareRevokePending}
@@ -965,12 +921,8 @@ export default function CollaborationSidebar({
                   copiedDirectToken={copiedDirectToken}
                   isShareGrantPending={isShareGrantPending}
                   isRevokeGrantPending={isRevokeGrantPending}
-                  onEmailChange={setInviteEmail}
-                  onRoleChange={setInviteRole}
-                  onSubmit={handleInviteSubmit}
                   onCopy={handleCopyLink}
                   onRevoke={handleRevoke}
-                  onDismissNewLink={() => setNewInviteToken(null)}
                   onRemoveMember={handleRemoveMember}
                   onUpdateMemberRole={handleUpdateMemberRole}
                   onCreateShareLink={handleCreateShareLink}
@@ -1719,23 +1671,17 @@ interface PeopleTabProps {
   currentUserRole: WorkspaceMemberRole
   canInvite: boolean
   canManageLinks: boolean
-  invitableRoles: WorkspaceMemberRole[]
-  inviteEmail: string
-  inviteRole: WorkspaceMemberRole
-  inviteError: string | null
   shareLinkError: string | null
   memberActionError: string | null
-  newInviteToken: string | null
   copiedToken: string | null
   newShareTokens: Record<string, string>
   copiedShareLinkId: string | null
-  isInvitePending: boolean
   isRevokePending: boolean
   isShareLinkPending: boolean
   isShareRevokePending: boolean
   isMemberActionPending: boolean
   shareEmail: string
-  shareRole: 'viewer' | 'commenter'
+  shareRole: 'viewer' | 'commenter' | 'editor'
   shareError: string | null
   shareResult:
     | { type: 'direct_grant'; name: string }
@@ -1744,12 +1690,8 @@ interface PeopleTabProps {
   copiedDirectToken: boolean
   isShareGrantPending: boolean
   isRevokeGrantPending: boolean
-  onEmailChange: (v: string) => void
-  onRoleChange: (v: WorkspaceMemberRole) => void
-  onSubmit: (e: React.FormEvent) => void
   onCopy: (token: string) => void
   onRevoke: (id: string) => void
-  onDismissNewLink: () => void
   onRemoveMember: (userId: string) => void
   onUpdateMemberRole: (userId: string, role: WorkspaceMemberRole) => void
   onCreateShareLink: (accessLevel: 'view' | 'comment') => void
@@ -1757,7 +1699,7 @@ interface PeopleTabProps {
   onCopyShareLink: (accessLevel: string, rawToken: string, linkId: string) => void
   onDismissShareToken: (accessLevel: string) => void
   onShareEmailChange: (v: string) => void
-  onShareRoleChange: (v: 'viewer' | 'commenter') => void
+  onShareRoleChange: (v: 'viewer' | 'commenter' | 'editor') => void
   onShareGrantSubmit: (e: React.FormEvent) => void
   onRevokeShareGrant: (userId: string) => void
   onDismissShareResult: () => void
@@ -1779,17 +1721,11 @@ function PeopleTab({
   currentUserRole,
   canInvite,
   canManageLinks,
-  invitableRoles,
-  inviteEmail,
-  inviteRole,
-  inviteError,
   shareLinkError,
   memberActionError,
-  newInviteToken,
   copiedToken,
   newShareTokens,
   copiedShareLinkId,
-  isInvitePending,
   isRevokePending,
   isShareLinkPending,
   isShareRevokePending,
@@ -1801,12 +1737,8 @@ function PeopleTab({
   copiedDirectToken,
   isShareGrantPending,
   isRevokeGrantPending,
-  onEmailChange,
-  onRoleChange,
-  onSubmit,
   onCopy,
   onRevoke,
-  onDismissNewLink,
   onRemoveMember,
   onUpdateMemberRole,
   onCreateShareLink,
@@ -1890,8 +1822,8 @@ function PeopleTab({
             Share this project
           </p>
           <p className="mb-2.5 text-[10px] text-slate-600">
-            Viewer or Commenter · project-specific. If the recipient already has a Harmony account
-            they get instant access; otherwise they receive an invite link.
+            Project-specific access. If the recipient already has a Harmony account they get instant
+            access; otherwise they receive an invite link.
           </p>
           <form onSubmit={onShareGrantSubmit} className="space-y-2">
             <input
@@ -1907,12 +1839,15 @@ function PeopleTab({
             <div className="flex gap-2">
               <select
                 value={shareRole}
-                onChange={(e) => onShareRoleChange(e.target.value as 'viewer' | 'commenter')}
+                onChange={(e) =>
+                  onShareRoleChange(e.target.value as 'viewer' | 'commenter' | 'editor')
+                }
                 disabled={isShareGrantPending}
                 className="flex-1 rounded border border-white/10 bg-[#09090f] px-2 py-2 text-xs text-slate-200 outline-none focus:border-[#7c3aed]/70"
               >
                 <option value="viewer">Viewer</option>
                 <option value="commenter">Commenter</option>
+                <option value="editor">Editor</option>
               </select>
               <button
                 type="submit"
@@ -1980,7 +1915,15 @@ function PeopleTab({
                     </p>
                     <p className="truncate text-[10px] text-slate-500">{g.email}</p>
                   </div>
-                  <RoleBadge role={g.accessLevel === 'comment' ? 'commenter' : 'viewer'} />
+                  <RoleBadge
+                    role={
+                      g.accessLevel === 'edit'
+                        ? 'editor'
+                        : g.accessLevel === 'comment'
+                          ? 'commenter'
+                          : 'viewer'
+                    }
+                  />
                   <button
                     type="button"
                     onClick={() => onRevokeShareGrant(g.userId)}
@@ -2032,81 +1975,6 @@ function PeopleTab({
                 </div>
               ))}
           </div>
-        </div>
-      )}
-
-      {/* Workspace invite form — owner/editor only, for editor-level access */}
-      {canInvite && (
-        <div className="border-t border-white/[0.06] pt-4">
-          <p className="mb-1 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-            <UserPlus className="h-3 w-3" />
-            Invite to workspace
-          </p>
-          <p className="mb-2.5 text-[10px] text-slate-600">
-            Editor / Commenter / Viewer · workspace-level. Use this to grant Editor access or add
-            someone to all projects in this workspace.
-          </p>
-          <form onSubmit={onSubmit} className="space-y-2">
-            <input
-              type="email"
-              value={inviteEmail}
-              onChange={(e) => onEmailChange(e.target.value)}
-              placeholder="Email address"
-              required
-              disabled={isInvitePending}
-              className="w-full rounded border border-white/10 bg-[#09090f] px-3 py-2 text-sm text-slate-100 outline-none transition placeholder:text-slate-600 focus:border-[#7c3aed]/70"
-            />
-            <div className="flex gap-2">
-              <select
-                value={inviteRole}
-                onChange={(e) => onRoleChange(e.target.value as WorkspaceMemberRole)}
-                disabled={isInvitePending}
-                className="flex-1 rounded border border-white/10 bg-[#09090f] px-2 py-2 text-xs text-slate-200 outline-none focus:border-[#7c3aed]/70"
-              >
-                {invitableRoles.map((r) => (
-                  <option key={r} value={r}>
-                    {ROLE_LABELS[r]}
-                  </option>
-                ))}
-              </select>
-              <button
-                type="submit"
-                disabled={isInvitePending || !inviteEmail.trim()}
-                className="rounded bg-[#7c3aed] px-3 py-2 text-xs font-semibold text-white transition hover:bg-[#8b5cf6] disabled:opacity-50"
-              >
-                {isInvitePending ? 'Sending…' : 'Send invite'}
-              </button>
-            </div>
-            {inviteError && <p className="text-xs text-red-300">{inviteError}</p>}
-          </form>
-
-          {/* Newly created invite link */}
-          {newInviteToken && (
-            <div className="mt-3 rounded border border-emerald-500/30 bg-emerald-500/8 p-3">
-              <div className="flex items-center justify-between gap-2">
-                <p className="flex items-center gap-1.5 text-xs font-semibold text-emerald-300">
-                  <LinkIcon className="h-3 w-3" />
-                  Invite link ready
-                </p>
-                <button
-                  type="button"
-                  onClick={onDismissNewLink}
-                  className="text-slate-500 hover:text-slate-300"
-                  aria-label="Dismiss"
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              </div>
-              <button
-                type="button"
-                onClick={() => onCopy(newInviteToken)}
-                className="mt-2 flex w-full items-center justify-center gap-1.5 rounded border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold text-emerald-200 transition hover:bg-emerald-500/20"
-              >
-                <Copy className="h-3 w-3" />
-                {copiedToken === newInviteToken ? 'Copied!' : 'Copy link'}
-              </button>
-            </div>
-          )}
         </div>
       )}
 

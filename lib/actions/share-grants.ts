@@ -12,7 +12,7 @@ export type ShareGrantDto = {
   userId: string
   displayName: string | null
   email: string
-  accessLevel: 'view' | 'comment'
+  accessLevel: 'view' | 'comment' | 'edit'
   grantedAt: string
   isLinkReviewer: boolean
   alias: string | null
@@ -44,15 +44,21 @@ async function requireOwnerOrEditor(projectId: string, userId: string) {
     )
     .limit(1)
 
-  if (!member || (member.role !== 'owner' && member.role !== 'editor')) {
-    throw new Error('Forbidden')
-  }
+  if (member?.role === 'owner' || member?.role === 'editor') return
+
+  const [grant] = await db
+    .select({ accessLevel: projectShareGrants.accessLevel })
+    .from(projectShareGrants)
+    .where(and(eq(projectShareGrants.projectId, projectId), eq(projectShareGrants.userId, userId)))
+    .limit(1)
+
+  if (grant?.accessLevel !== 'edit') throw new Error('Forbidden')
 }
 
 export async function shareProjectWithUser(params: {
   projectId: string
   email: string
-  role: 'viewer' | 'commenter'
+  role: 'viewer' | 'commenter' | 'editor'
 }): Promise<ShareResult> {
   const caller = await requireUser()
   await requireOwnerOrEditor(params.projectId, caller.id)
@@ -66,7 +72,8 @@ export async function shareProjectWithUser(params: {
     throw new Error('You cannot share a project with yourself.')
   }
 
-  const accessLevel = params.role === 'commenter' ? 'comment' : ('view' as const)
+  const accessLevel =
+    params.role === 'editor' ? 'edit' : params.role === 'commenter' ? 'comment' : ('view' as const)
 
   const recipient = await getUserByEmail(email)
 
@@ -136,7 +143,8 @@ export async function shareProjectWithUser(params: {
     workspaceId: project.workspaceId,
     invitedBy: caller.id,
     email,
-    role: params.role === 'commenter' ? 'commenter' : 'viewer',
+    role:
+      params.role === 'commenter' ? 'commenter' : params.role === 'editor' ? 'editor' : 'viewer',
     projectId: params.projectId,
     token,
     expiresAt,

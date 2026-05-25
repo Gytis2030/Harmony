@@ -44,9 +44,15 @@ async function requireOwnerOrEditor(projectId: string, userId: string) {
     )
     .limit(1)
 
-  if (!member || (member.role !== 'owner' && member.role !== 'editor')) {
-    throw new Error('Forbidden')
-  }
+  if (member?.role === 'owner' || member?.role === 'editor') return
+
+  const [grant] = await db
+    .select({ accessLevel: projectShareGrants.accessLevel })
+    .from(projectShareGrants)
+    .where(and(eq(projectShareGrants.projectId, projectId), eq(projectShareGrants.userId, userId)))
+    .limit(1)
+
+  if (grant?.accessLevel !== 'edit') throw new Error('Forbidden')
 }
 
 function hashToken(rawToken: string): string {
@@ -103,7 +109,7 @@ export async function createShareLink(params: {
   return {
     id: link.id,
     projectId: link.projectId,
-    accessLevel: link.accessLevel,
+    accessLevel: link.accessLevel as 'view' | 'comment',
     isActive: link.isActive,
     createdAt: link.createdAt.toISOString(),
     rawToken,

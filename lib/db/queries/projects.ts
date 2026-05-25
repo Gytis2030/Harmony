@@ -73,7 +73,7 @@ export async function getProjectByIdWithShareGrant(projectId: string, userId: st
 export async function getShareGrantForUser(
   projectId: string,
   userId: string
-): Promise<{ accessLevel: 'view' | 'comment' } | null> {
+): Promise<{ accessLevel: 'view' | 'comment' | 'edit' } | null> {
   const [row] = await db
     .select({ accessLevel: projectShareGrants.accessLevel })
     .from(projectShareGrants)
@@ -86,7 +86,7 @@ export async function getShareGrantForUser(
 export async function getActiveShareLinksForProject(
   projectId: string
 ): Promise<{ id: string; accessLevel: 'view' | 'comment'; isActive: boolean; createdAt: Date }[]> {
-  return db
+  const rows = await db
     .select({
       id: projectShareLinks.id,
       accessLevel: projectShareLinks.accessLevel,
@@ -95,6 +95,12 @@ export async function getActiveShareLinksForProject(
     })
     .from(projectShareLinks)
     .where(and(eq(projectShareLinks.projectId, projectId), eq(projectShareLinks.isActive, true)))
+  return rows as {
+    id: string
+    accessLevel: 'view' | 'comment'
+    isActive: boolean
+    createdAt: Date
+  }[]
 }
 
 export async function getShareLinkByTokenHash(tokenHash: string) {

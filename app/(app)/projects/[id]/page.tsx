@@ -97,7 +97,7 @@ export default async function ProjectEditorPage({ params }: Props) {
     canUploadTracks = currentUserRole === 'owner' || currentUserRole === 'editor'
 
     const [invites, shareLinks, shareGrantUsers, versionList, activityRows] = await Promise.all([
-      getWorkspacePendingInvites(project.workspaceId),
+      getWorkspacePendingInvites(project.workspaceId, params.id),
       getActiveShareLinksForProject(params.id),
       getProjectShareGrantUsers(params.id),
       listVersions(params.id),
@@ -149,23 +149,61 @@ export default async function ProjectEditorPage({ params }: Props) {
     if (!grant) notFound()
 
     isWorkspaceMember = false
-    currentUserRole = grant.accessLevel === 'comment' ? 'commenter' : 'viewer'
-    canComment = grant.accessLevel === 'comment'
-    canManageComments = false
-    canUploadTracks = false
 
-    const SHARE_GRANT_ACTIVITY_TYPES = new Set([
-      'track.uploaded',
-      'comment.created',
-      'comment.replied',
-      'comment.resolved',
-      'comment.reopened',
-      'version.created',
-      'version.restored',
-    ])
-    const activityRows = await getRecentActivity(params.id).catch(() => [])
-    const filtered = activityRows.filter((r) => SHARE_GRANT_ACTIVITY_TYPES.has(r.type))
-    activityDtos = await applyAliasesToActivity(filtered)
+    if (grant.accessLevel === 'edit') {
+      currentUserRole = 'editor'
+      canComment = true
+      canManageComments = true
+      canUploadTracks = true
+
+      const [shareLinks, shareGrantUsers, versionList, activityRows] = await Promise.all([
+        getActiveShareLinksForProject(params.id),
+        getProjectShareGrantUsers(params.id),
+        listVersions(params.id),
+        getRecentActivity(params.id).catch(() => []),
+      ])
+      versions = versionList
+      activityDtos = await applyAliasesToActivity(activityRows)
+
+      shareLinkDtos = shareLinks.map((l) => ({
+        id: l.id,
+        projectId: params.id,
+        accessLevel: l.accessLevel,
+        isActive: l.isActive,
+        createdAt: l.createdAt.toISOString(),
+      }))
+
+      shareGrantDtos = shareGrantUsers.map((g) => {
+        const isLinkReviewer = g.shareLinkId !== null
+        return {
+          userId: g.userId,
+          displayName: g.displayName ?? null,
+          email: g.email,
+          accessLevel: g.accessLevel,
+          grantedAt: g.grantedAt.toISOString(),
+          isLinkReviewer,
+          alias: isLinkReviewer ? getReviewerAlias(params.id, g.userId) : null,
+        }
+      })
+    } else {
+      currentUserRole = grant.accessLevel === 'comment' ? 'commenter' : 'viewer'
+      canComment = grant.accessLevel === 'comment'
+      canManageComments = false
+      canUploadTracks = false
+
+      const SHARE_GRANT_ACTIVITY_TYPES = new Set([
+        'track.uploaded',
+        'comment.created',
+        'comment.replied',
+        'comment.resolved',
+        'comment.reopened',
+        'version.created',
+        'version.restored',
+      ])
+      const activityRows = await getRecentActivity(params.id).catch(() => [])
+      const filtered = activityRows.filter((r) => SHARE_GRANT_ACTIVITY_TYPES.has(r.type))
+      activityDtos = await applyAliasesToActivity(filtered)
+    }
   }
 
   const comments = await getCommentsForProject(params.id, user.id)

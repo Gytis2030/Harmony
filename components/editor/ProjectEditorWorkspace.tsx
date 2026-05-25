@@ -373,7 +373,6 @@ function ProjectEditorInner({
           onCommentSelect={handleCommentSelect}
           onVersionCreated={handleVersionCreated}
           onRestoreComplete={handleRestoreComplete}
-          onInviteCreated={(inv) => setInvites((cur) => [inv, ...cur])}
           onInviteRevoked={(id) => setInvites((cur) => cur.filter((i) => i.id !== id))}
           onMemberRemoved={(userId) => setMembers((cur) => cur.filter((m) => m.userId !== userId))}
           onMemberRoleChanged={(userId, role) =>

@@ -75,7 +75,7 @@ async function requireCommentPermission(projectId: string, userId: string) {
 
   if (memberRow && memberRow.role !== 'viewer') return
 
-  // Share-grant with comment access
+  // Share-grant with comment or edit access
   const [grantRow] = await db
     .select({ accessLevel: projectShareGrants.accessLevel })
     .from(projectShareGrants)
@@ -84,13 +84,12 @@ async function requireCommentPermission(projectId: string, userId: string) {
       and(
         eq(projectShareGrants.projectId, projectId),
         eq(projectShareGrants.userId, userId),
-        eq(projectShareGrants.accessLevel, 'comment'),
         isNull(projects.deletedAt)
       )
     )
     .limit(1)
 
-  if (grantRow) return
+  if (grantRow && (grantRow.accessLevel === 'comment' || grantRow.accessLevel === 'edit')) return
 
   throw new Error('Forbidden')
 }
@@ -255,7 +254,17 @@ export async function setCommentStatus(params: { commentId: string; status: 'ope
     .limit(1)
 
   if (!membership || (membership.role !== 'owner' && membership.role !== 'editor')) {
-    throw new Error('Forbidden')
+    const [grant] = await db
+      .select({ accessLevel: projectShareGrants.accessLevel })
+      .from(projectShareGrants)
+      .where(
+        and(
+          eq(projectShareGrants.projectId, comment.projectId),
+          eq(projectShareGrants.userId, user.id)
+        )
+      )
+      .limit(1)
+    if (grant?.accessLevel !== 'edit') throw new Error('Forbidden')
   }
 
   const [updated] = await db
@@ -339,7 +348,17 @@ export async function setCommentPinned(params: { commentId: string; isPinned: bo
     .limit(1)
 
   if (!membership || (membership.role !== 'owner' && membership.role !== 'editor')) {
-    throw new Error('Forbidden')
+    const [grant] = await db
+      .select({ accessLevel: projectShareGrants.accessLevel })
+      .from(projectShareGrants)
+      .where(
+        and(
+          eq(projectShareGrants.projectId, comment.projectId),
+          eq(projectShareGrants.userId, user.id)
+        )
+      )
+      .limit(1)
+    if (grant?.accessLevel !== 'edit') throw new Error('Forbidden')
   }
 
   const [updated] = await db
@@ -415,7 +434,17 @@ export async function deleteComment(commentId: string) {
     .limit(1)
 
   if (!membership || (membership.role !== 'owner' && membership.role !== 'editor')) {
-    throw new Error('Forbidden')
+    const [grant] = await db
+      .select({ accessLevel: projectShareGrants.accessLevel })
+      .from(projectShareGrants)
+      .where(
+        and(
+          eq(projectShareGrants.projectId, comment.projectId),
+          eq(projectShareGrants.userId, user.id)
+        )
+      )
+      .limit(1)
+    if (grant?.accessLevel !== 'edit') throw new Error('Forbidden')
   }
 
   await db.delete(comments).where(eq(comments.id, commentId))

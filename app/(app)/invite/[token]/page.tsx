@@ -64,7 +64,8 @@ export default async function AcceptInvitePage({ params, searchParams }: Props) 
   const destination = projectId ? `/projects/${projectId}` : '/dashboard'
 
   const isProjectScoped =
-    projectId !== null && (invite.role === 'viewer' || invite.role === 'commenter')
+    projectId !== null &&
+    (invite.role === 'viewer' || invite.role === 'commenter' || invite.role === 'editor')
 
   if (isProjectScoped) {
     // Already has a share grant → go straight to the project.

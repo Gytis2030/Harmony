@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm'
+import { and, eq, isNull, or } from 'drizzle-orm'
 import { db } from '../index'
 import { users, workspaceInvites, workspaceMembers } from '../schema'
 
@@ -17,7 +17,8 @@ export async function getWorkspaceMembers(workspaceId: string) {
     .where(eq(workspaceMembers.workspaceId, workspaceId))
 }
 
-export async function getWorkspacePendingInvites(workspaceId: string) {
+// projectId: include workspace-level (null) invites too — accepting them affects all projects.
+export async function getWorkspacePendingInvites(workspaceId: string, projectId?: string) {
   return db
     .select({
       id: workspaceInvites.id,
@@ -31,7 +32,13 @@ export async function getWorkspacePendingInvites(workspaceId: string) {
     })
     .from(workspaceInvites)
     .where(
-      and(eq(workspaceInvites.workspaceId, workspaceId), eq(workspaceInvites.status, 'pending'))
+      and(
+        eq(workspaceInvites.workspaceId, workspaceId),
+        eq(workspaceInvites.status, 'pending'),
+        projectId !== undefined
+          ? or(isNull(workspaceInvites.projectId), eq(workspaceInvites.projectId, projectId))
+          : undefined
+      )
     )
 }
 

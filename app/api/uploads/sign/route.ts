@@ -1,7 +1,7 @@
 import { auth } from '@clerk/nextjs/server'
 import { and, eq } from 'drizzle-orm'
 import { db } from '@/lib/db'
-import { projects, workspaceMembers } from '@/lib/db/schema'
+import { projects, projectShareGrants, workspaceMembers } from '@/lib/db/schema'
 import { getUserByClerkId } from '@/lib/db/queries/users'
 import { createPresignedPutUrl } from '@/lib/storage/r2'
 
@@ -85,8 +85,17 @@ export async function POST(req: Request) {
     )
     .limit(1)
 
-  if (!membership || (membership.role !== 'owner' && membership.role !== 'editor')) {
-    return new Response('Forbidden', { status: 403 })
+  if (membership?.role !== 'owner' && membership?.role !== 'editor') {
+    const [grant] = await db
+      .select({ accessLevel: projectShareGrants.accessLevel })
+      .from(projectShareGrants)
+      .where(
+        and(eq(projectShareGrants.projectId, projectId), eq(projectShareGrants.userId, user.id))
+      )
+      .limit(1)
+    if (grant?.accessLevel !== 'edit') {
+      return new Response('Forbidden', { status: 403 })
+    }
   }
 
   // Build a safe key: strip any path traversal chars from the filename.
