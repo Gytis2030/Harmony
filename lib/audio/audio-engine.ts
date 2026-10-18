@@ -1,4 +1,5 @@
 import { getAudioContext, resumeAudioContext, LOOKAHEAD } from './audio-context'
+import { readCachedAudio, writeCachedAudio } from './audio-cache'
 
 export type EngineState = 'idle' | 'loading' | 'playing' | 'paused'
 
@@ -117,7 +118,13 @@ class AudioEngine {
 
   // ── Load & decode ─────────────────────────────────────────────────────────
 
-  async loadTrack(trackId: string, audioFileId: string, signedUrl: string): Promise<AudioBuffer> {
+  // `source` is either a signed URL or a function that fetches one. Passing a
+  // function lets a cache hit skip the signed-URL request entirely.
+  async loadTrack(
+    trackId: string,
+    audioFileId: string,
+    source: string | (() => Promise<string>)
+  ): Promise<AudioBuffer> {
     this._trackToFile.set(trackId, audioFileId)
 
     if (this._bufferCache.has(audioFileId)) {
@@ -133,8 +140,16 @@ class AudioEngine {
     try {
       const ctx = getAudioContext()
 
-      const response = await fetch(signedUrl)
-      const arrayBuffer = await response.arrayBuffer()
+      // Cache Storage first (see audio-cache.ts); the network only on a miss.
+      let arrayBuffer = await readCachedAudio(audioFileId)
+      if (!arrayBuffer) {
+        const url = typeof source === 'string' ? source : await source()
+        const response = await fetch(url)
+        if (!response.ok) throw new Error(`Audio download failed (${response.status})`)
+        arrayBuffer = await response.arrayBuffer()
+        // Copy synchronously: decodeAudioData below detaches the original buffer.
+        void writeCachedAudio(audioFileId, arrayBuffer.slice(0))
+      }
       const decoded = await ctx.decodeAudioData(arrayBuffer)
 
       let buffer: AudioBuffer
