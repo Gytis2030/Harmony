@@ -19,6 +19,8 @@ interface AudioEngineInternals {
   _trackToFile: Map<string, string>
   _loadingSet: Set<string>
   _masterGain: { gain: { value: number } } | null
+  _fadeGain: ReturnType<typeof makeGainNode> | null
+  _playRequest: number
   _pausedOffset: number
   _startedAt: number
 }
@@ -26,7 +28,16 @@ interface AudioEngineInternals {
 // ── Minimal Web Audio mocks ──────────────────────────────────────────────────
 
 function makeGainNode() {
-  return { gain: { value: 1 }, connect: vi.fn(), disconnect: vi.fn() }
+  return {
+    gain: {
+      value: 1,
+      cancelScheduledValues: vi.fn(),
+      setValueAtTime: vi.fn(),
+      linearRampToValueAtTime: vi.fn(),
+    },
+    connect: vi.fn(),
+    disconnect: vi.fn(),
+  }
 }
 
 function makeSource(): MockSource {
@@ -72,7 +83,7 @@ vi.mock('@/lib/audio/audio-context', () => ({
 }))
 
 // Import engine AFTER the mock is registered
-const { audioEngine } = await import('@/lib/audio/audio-engine')
+const { audioEngine, FADE_SECONDS } = await import('@/lib/audio/audio-engine')
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -109,6 +120,9 @@ describe('AudioEngine', () => {
     internals()._trackToFile.clear()
     internals()._loadingSet.clear()
     internals()._masterGain = null
+    internals()._fadeGain = null
+    mockCtx.state = 'running'
+    mockCtx.resume.mockResolvedValue(undefined)
     internals()._pausedOffset = 0
     internals()._startedAt = 0
   })
@@ -492,5 +506,69 @@ describe('AudioEngine', () => {
 
     audioEngine.seek(99)
     expect(internals()._pausedOffset).toBe(30)
+  })
+
+  // ── Click/crackle prevention ──────────────────────────────────────────────
+
+  function loadOne() {
+    internals()._trackToFile.set('track-f', 'file-f')
+    internals()._bufferCache.set('file-f', makeBuffer(48000, 30))
+  }
+
+  it('fades in from silence at the scheduled start time', () => {
+    loadOne()
+    currentTimeRef.value = 5
+    audioEngine.play()
+
+    const gain = internals()._fadeGain!.gain
+    const start = 5 + LOOKAHEAD
+    expect(gain.setValueAtTime).toHaveBeenCalledWith(0, start)
+    expect(gain.linearRampToValueAtTime).toHaveBeenCalledWith(1, start + FADE_SECONDS)
+  })
+
+  it('fades out and stops sources once silent on pause', () => {
+    loadOne()
+    audioEngine.play()
+    const source = internals()._activeSources.get('track-f') as MockSource
+    currentTimeRef.value = 3
+
+    audioEngine.pause()
+
+    const gain = internals()._fadeGain!.gain
+    expect(gain.linearRampToValueAtTime).toHaveBeenLastCalledWith(0, 3 + FADE_SECONDS)
+    expect(source.stop).toHaveBeenCalledWith(3 + FADE_SECONDS)
+  })
+
+  it('waits for a suspended context to start running before scheduling', async () => {
+    loadOne()
+    mockCtx.state = 'suspended'
+    mockCtx.resume.mockImplementation(async () => {
+      mockCtx.state = 'running'
+    })
+
+    audioEngine.play()
+    expect(audioEngine.state).toBe('idle')
+    expect(mockCtx.createBufferSource).not.toHaveBeenCalled()
+
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(audioEngine.state).toBe('playing')
+  })
+
+  it('drops a pending play if stop() is called while the context is starting', async () => {
+    loadOne()
+    internals()._state = 'paused'
+    mockCtx.state = 'suspended'
+    mockCtx.resume.mockImplementation(async () => {
+      mockCtx.state = 'running'
+    })
+
+    audioEngine.play()
+    audioEngine.stop()
+
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(audioEngine.state).toBe('idle')
+    expect(mockCtx.createBufferSource).not.toHaveBeenCalled()
   })
 })

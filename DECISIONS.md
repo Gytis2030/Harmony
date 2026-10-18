@@ -22,6 +22,30 @@ Decisions go newest-first.
 
 ---
 
+## 2026-10-18 — Fade every start/stop and wait for a running AudioContext
+
+**Context.** Playback crackled in its first moments. Three causes: sources were scheduled while the AudioContext was still suspended (the output device starts up as audio begins), waveforms started and stopped abruptly mid-cycle, and the default 'interactive' latency uses small buffers that underrun with many stems.
+
+**Decision.** `play()` waits for `ctx.resume()` before scheduling, guarded by a request counter so a pause/stop in between cancels it. A dedicated fade gain node after the master gain ramps 0 → 1 over 12 ms at each start and 1 → 0 at each stop/pause/seek, with sources stopped once silent. The AudioContext uses `latencyHint: 'playback'`.
+
+**Alternatives considered.** Fading on the master gain (would fight the user's master volume). A longer lookahead only (doesn't remove clicks from abrupt starts).
+
+**Trade-offs / consequences.** A few extra milliseconds of output latency, irrelevant since Harmony never records. Mute/solo still set gain instantly and can click; smooth those with `setTargetAtTime` if it's noticed.
+
+---
+
+## 2026-10-18 — Cache stem bytes in Cache Storage; sign URLs at page render
+
+**Context.** Opening a project re-downloaded every stem every time: each signed URL is unique, so the HTTP cache never matched. Each track also made its own serverless request for a signed URL.
+
+**Decision.** `lib/audio/audio-cache.ts` stores downloaded bytes in Cache Storage keyed by `audioFileId` (files are immutable per id). The project page signs every track's GET URL while rendering and passes it down; `/api/tracks/[id]/url` remains the fallback for retries and client-added tracks.
+
+**Alternatives considered.** IndexedDB (more code for the same result). Long-lived public R2 URLs (would make stems readable by anyone with the link).
+
+**Trade-offs / consequences.** Stems take browser storage; the browser evicts it under pressure, and a miss just falls back to the network. Bump `CACHE_NAME` to invalidate everything.
+
+---
+
 ## 2026-05-02 — Safari ignores AudioContext sampleRate option; resample is the common case
 
 **Context.** Safari does not honour `{ sampleRate: 48000 }` in the `AudioContext`
@@ -157,7 +181,7 @@ the escape hatch for V2.
 
 - AWS S3 — industry standard, but egress charges scale with collaboration (every collaborator streaming a stem = bandwidth bill). Bad fit for our usage pattern.
 - Backblaze B2 — cheap, but less mature SDK and fewer regions.
-- Supabase Storage — convenient if we used Supabase end-to-end, but we're on Neon + Clerk, so it adds another vendor.
+- Supabase Storage — convenient if we used Supabase end-to-end, but we only use Supabase for Postgres, so it adds another vendor surface.
 
 **Trade-offs / consequences.** Slightly less mature ecosystem than S3, occasional API quirks. Mitigation: use the S3-compatible API surface so we can swap providers without rewriting upload logic.
 
