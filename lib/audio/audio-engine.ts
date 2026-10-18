@@ -1,6 +1,12 @@
-import { getAudioContext, resumeAudioContext, LOOKAHEAD } from './audio-context'
+import { getAudioContext, LOOKAHEAD } from './audio-context'
+import { readCachedAudio, writeCachedAudio } from './audio-cache'
 
 export type EngineState = 'idle' | 'loading' | 'playing' | 'paused'
+
+// Length of the fade applied whenever playback starts or stops. Starting or
+// cutting a waveform mid-cycle produces an audible click; ramping the output
+// from/to silence over a few milliseconds removes it without being noticeable.
+export const FADE_SECONDS = 0.012
 
 class AudioEngine {
   private _state: EngineState = 'idle'
@@ -23,6 +29,12 @@ class AudioEngine {
   private _loadingSet: Set<string> = new Set()
 
   private _masterGain: GainNode | null = null
+  // Sits after the master gain; only ever automated for start/stop fades, so it
+  // never fights with the user's master volume.
+  private _fadeGain: GainNode | null = null
+  // Incremented by every play/pause/stop/seek, so a play() that is waiting for
+  // the audio device to start can tell it has been superseded.
+  private _playRequest = 0
   private _startedAt = 0
   private _pausedOffset = 0
 
@@ -71,9 +83,35 @@ class AudioEngine {
     if (!this._masterGain) {
       const ctx = getAudioContext()
       this._masterGain = ctx.createGain()
-      this._masterGain.connect(ctx.destination)
+      this._masterGain.connect(this._getFadeGain())
     }
     return this._masterGain
+  }
+
+  private _getFadeGain(): GainNode {
+    if (!this._fadeGain) {
+      const ctx = getAudioContext()
+      this._fadeGain = ctx.createGain()
+      this._fadeGain.connect(ctx.destination)
+    }
+    return this._fadeGain
+  }
+
+  // Ramp the output down to silence and stop every active source once it is
+  // silent. Clears onended first — see the race note on pause().
+  private _fadeOutAndStopSources(): void {
+    if (this._activeSources.size === 0) return
+    const ctx = getAudioContext()
+    const now = ctx.currentTime
+    const gain = this._getFadeGain().gain
+    gain.cancelScheduledValues(now)
+    gain.setValueAtTime(gain.value, now)
+    gain.linearRampToValueAtTime(0, now + FADE_SECONDS)
+    this._activeSources.forEach((source) => {
+      source.onended = null
+      source.stop(now + FADE_SECONDS)
+    })
+    this._activeSources.clear()
   }
 
   setMasterVolume(value: number): void {
@@ -117,7 +155,13 @@ class AudioEngine {
 
   // ── Load & decode ─────────────────────────────────────────────────────────
 
-  async loadTrack(trackId: string, audioFileId: string, signedUrl: string): Promise<AudioBuffer> {
+  // `source` is either a signed URL or a function that fetches one. Passing a
+  // function lets a cache hit skip the signed-URL request entirely.
+  async loadTrack(
+    trackId: string,
+    audioFileId: string,
+    source: string | (() => Promise<string>)
+  ): Promise<AudioBuffer> {
     this._trackToFile.set(trackId, audioFileId)
 
     if (this._bufferCache.has(audioFileId)) {
@@ -133,8 +177,16 @@ class AudioEngine {
     try {
       const ctx = getAudioContext()
 
-      const response = await fetch(signedUrl)
-      const arrayBuffer = await response.arrayBuffer()
+      // Cache Storage first (see audio-cache.ts); the network only on a miss.
+      let arrayBuffer = await readCachedAudio(audioFileId)
+      if (!arrayBuffer) {
+        const url = typeof source === 'string' ? source : await source()
+        const response = await fetch(url)
+        if (!response.ok) throw new Error(`Audio download failed (${response.status})`)
+        arrayBuffer = await response.arrayBuffer()
+        // Copy synchronously: decodeAudioData below detaches the original buffer.
+        void writeCachedAudio(audioFileId, arrayBuffer.slice(0))
+      }
       const decoded = await ctx.decodeAudioData(arrayBuffer)
 
       let buffer: AudioBuffer
@@ -177,7 +229,21 @@ class AudioEngine {
     if (this._state === 'playing' || this._state === 'loading') return
 
     const ctx = getAudioContext()
-    resumeAudioContext()
+    const request = ++this._playRequest
+
+    // Browsers create the AudioContext suspended until a user gesture. Scheduling
+    // sources while the output device is still starting up is the main cause of
+    // crackles in the first moments of playback, so wait until it is running.
+    if (ctx.state !== 'running') {
+      ctx.resume().then(
+        () => {
+          // Ignore if pause/stop/seek/another play happened meanwhile.
+          if (request === this._playRequest) this.play()
+        },
+        () => {}
+      )
+      return
+    }
 
     // Stop any lingering sources without triggering the onended state transition.
     this._activeSources.forEach((source) => {
@@ -187,6 +253,13 @@ class AudioEngine {
     this._activeSources.clear()
 
     const startTime = ctx.currentTime + LOOKAHEAD
+
+    // Fade in from silence at the scheduled start. Only events at or after
+    // startTime are cancelled, so a fade-out still running from a seek survives.
+    const fade = this._getFadeGain().gain
+    fade.cancelScheduledValues(startTime)
+    fade.setValueAtTime(0, startTime)
+    fade.linearRampToValueAtTime(1, startTime + FADE_SECONDS)
 
     for (const [trackId, audioFileId] of this._trackToFile) {
       const buffer = this._bufferCache.get(audioFileId)
@@ -225,6 +298,7 @@ class AudioEngine {
   pause(): void {
     if (this._state !== 'playing') return
 
+    this._playRequest++
     const ctx = getAudioContext()
     this._pausedOffset += Math.max(0, ctx.currentTime - this._startedAt)
 
@@ -234,14 +308,11 @@ class AudioEngine {
     this._state = 'paused'
     this._emit()
 
-    this._activeSources.forEach((source) => {
-      source.onended = null
-      source.stop()
-    })
-    this._activeSources.clear()
+    this._fadeOutAndStopSources()
   }
 
   stop(): void {
+    this._playRequest++
     if (this._state === 'idle') return
 
     // Set state BEFORE calling stop() for the same race reason as pause().
@@ -249,11 +320,7 @@ class AudioEngine {
     this._state = 'idle'
     this._emit()
 
-    this._activeSources.forEach((source) => {
-      source.onended = null
-      source.stop()
-    })
-    this._activeSources.clear()
+    this._fadeOutAndStopSources()
   }
 
   // ── Volume, mute, solo ────────────────────────────────────────────────────
@@ -283,12 +350,8 @@ class AudioEngine {
     const clamped = Math.max(0, max > 0 ? Math.min(seconds, max) : seconds)
 
     if (this._state === 'playing') {
-      // Clear onended before stopping — same guard as pause()/stop()
-      this._activeSources.forEach((source) => {
-        source.onended = null
-        source.stop()
-      })
-      this._activeSources.clear()
+      // Fade out the old position; play() below fades in at the new one.
+      this._fadeOutAndStopSources()
       // Set paused without emitting — play() below will emit 'playing'
       this._state = 'paused'
       this._pausedOffset = clamped

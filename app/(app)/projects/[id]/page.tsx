@@ -9,6 +9,7 @@ import {
   getLinkReviewerIds,
 } from '@/lib/db/queries/projects'
 import { getTracksForProject } from '@/lib/db/queries/tracks'
+import { createPresignedGetUrl } from '@/lib/storage/r2'
 import { getCommentsForProject } from '@/lib/db/queries/comments'
 import { getWorkspaceMembers, getWorkspacePendingInvites } from '@/lib/db/queries/workspaces'
 import { getRecentActivity } from '@/lib/db/queries/activity'
@@ -35,8 +36,25 @@ export default async function ProjectEditorPage({ params }: Props) {
   const project = await getProjectByIdWithShareGrant(params.id, user.id)
   if (!project) notFound()
 
-  const tracks = await getTracksForProject(params.id)
-  const allMembers = await getWorkspaceMembers(project.workspaceId)
+  // These three only depend on the project, so fetch them together instead of
+  // one after another: each sequential query is a full round trip to the database.
+  const [trackRows, allMembers, comments] = await Promise.all([
+    getTracksForProject(params.id),
+    getWorkspaceMembers(project.workspaceId),
+    getCommentsForProject(params.id, user.id),
+  ])
+
+  // Sign each stem's download URL now (local signing, no network call), so the
+  // browser can start downloading immediately instead of asking for a URL per track.
+  // r2Key stays on the server.
+  const tracks = await Promise.all(
+    trackRows.map(async ({ audioFile, ...track }) => {
+      if (!audioFile) return { ...track, audioFile: null }
+      const { r2Key, ...file } = audioFile
+      const signedUrl = await createPresignedGetUrl({ key: r2Key }).catch(() => null)
+      return { ...track, audioFile: { ...file, signedUrl } }
+    })
+  )
   const memberRecord = allMembers.find((m) => m.userId === user.id)
 
   let currentUserRole: Role
@@ -205,8 +223,6 @@ export default async function ProjectEditorPage({ params }: Props) {
       activityDtos = await applyAliasesToActivity(filtered)
     }
   }
-
-  const comments = await getCommentsForProject(params.id, user.id)
 
   const commentDtos = comments.map((comment) => ({
     ...comment,

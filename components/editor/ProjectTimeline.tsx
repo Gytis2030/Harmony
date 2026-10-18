@@ -22,6 +22,8 @@ type Track = {
     originalFilename: string
     sizeBytes: number
     durationSeconds: number | null
+    // Signed by the server at page render; absent for tracks added client-side.
+    signedUrl?: string | null
   } | null
 }
 
@@ -180,6 +182,7 @@ export default function ProjectTimeline({
                 projectId={projectId}
                 trackId={track.id}
                 audioFileId={track.audioFile.id}
+                signedUrl={track.audioFile.signedUrl}
                 trackName={track.name}
                 originalFilename={track.audioFile.originalFilename}
                 sizeBytes={track.audioFile.sizeBytes}

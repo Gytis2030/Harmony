@@ -7,7 +7,11 @@ export function getAudioContext(): AudioContext {
     throw new Error('AudioContext is only available in the browser')
   }
   if (!_ctx) {
-    _ctx = new AudioContext({ sampleRate: 48000 })
+    // latencyHint 'playback' asks the browser for larger audio buffers. Harmony
+    // plays back many stems at once and never records, so a few extra
+    // milliseconds of output latency are invisible, while small buffers risk
+    // underruns that are heard as crackles.
+    _ctx = new AudioContext({ sampleRate: 48000, latencyHint: 'playback' })
   }
   return _ctx
 }

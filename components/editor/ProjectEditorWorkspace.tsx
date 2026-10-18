@@ -35,6 +35,8 @@ type Track = {
     originalFilename: string
     sizeBytes: number
     durationSeconds: number | null
+    // Signed by the server at page render; absent for tracks added client-side.
+    signedUrl?: string | null
   } | null
 }
 

@@ -12,6 +12,7 @@ interface Props {
   projectId: string
   trackId: string
   audioFileId: string
+  signedUrl?: string | null
   trackName: string
   originalFilename: string
   sizeBytes: number
@@ -80,6 +81,7 @@ export default function TrackRow({
   projectId,
   trackId,
   audioFileId,
+  signedUrl,
   trackName,
   originalFilename,
   sizeBytes,
@@ -136,12 +138,20 @@ export default function TrackRow({
           if (!mountedRef.current) return
         }
         try {
-          const res = await fetch(`/api/tracks/${trackId}/url`)
-          // Retry on 404 — the DB row may not be visible to this connection yet.
-          if (!res.ok && attempt < MAX_RETRIES) continue
-          if (!res.ok) throw new Error(`Failed to get signed URL (${res.status})`)
-          const { url } = (await res.json()) as { url: string }
-          const buffer = await audioEngine.loadTrack(trackId, audioFileId, url)
+          // First attempt uses the URL the server signed while rendering the page,
+          // which saves one request per track. Retries (e.g. an expired URL) and
+          // tracks added client-side ask the URL route instead. On a cache hit the
+          // engine never calls this at all.
+          const preSigned = attempt === 0 ? signedUrl : undefined
+          const getUrl = async (): Promise<string> => {
+            if (preSigned) return preSigned
+            const res = await fetch(`/api/tracks/${trackId}/url`)
+            // 404 is retried by the loop — the DB row may not be visible to this connection yet.
+            if (!res.ok) throw new Error(`Failed to get signed URL (${res.status})`)
+            const { url } = (await res.json()) as { url: string }
+            return url
+          }
+          const buffer = await audioEngine.loadTrack(trackId, audioFileId, getUrl)
           if (mountedRef.current) {
             dispatch({ type: 'load_success', payload: buffer })
             onTrackLoaded(trackId, buffer.duration)
@@ -159,7 +169,7 @@ export default function TrackRow({
       }
     }
     load()
-  }, [trackId, audioFileId, onTrackLoaded])
+  }, [trackId, audioFileId, signedUrl, onTrackLoaded])
 
   useEffect(() => {
     audioEngine.setVolume(trackId, initialVolume)
